@@ -1,0 +1,179 @@
+/* Remndrs — minimal dark UI. Final design is being produced separately;
+   keep this functional and plain. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0d0d0d;
+  color: #e5e5e5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+button {
+  background: #1f1f1f;
+  color: #e5e5e5;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+button:hover { border-color: #555; }
+button.primary { background: #4ade80; color: #0d0d0d; border: none; }
+button.active { background: #333; }
+
+input, textarea, select {
+  background: #161616;
+  color: #e5e5e5;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.muted { color: #666; font-size: 12px; }
+
+/* Login */
+.login-body { display: flex; align-items: center; justify-content: center; height: 100vh; }
+.login-card { display: flex; flex-direction: column; gap: 12px; width: 280px; }
+.login-card h1 { text-align: center; }
+.login-error { color: #f87171; text-align: center; }
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #272727;
+}
+.wordmark { font-weight: 700; font-size: 18px; }
+.feed-toggle { display: flex; gap: 4px; }
+.header-right { margin-left: auto; display: flex; gap: 8px; }
+
+/* Toolbar */
+.toolbar { display: flex; gap: 12px; padding: 12px 20px; }
+#search { flex: 1; }
+.round-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 20px; line-height: 1;
+}
+
+/* Tag bar */
+.tag-bar {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px; padding: 0 20px 8px;
+}
+.tag-pill {
+  border: none; border-radius: 999px;
+  padding: 4px 12px;
+  color: #fff; font-size: 12px; font-weight: 600;
+  opacity: 0.9;
+}
+.tag-pill.dimmed { opacity: 0.5; }
+.tag-pill.active { opacity: 1; transform: scale(1.05); }
+.filter-label { padding: 0 20px 8px; color: #888; font-size: 12px; }
+
+/* Cards */
+main {
+  column-count: 4;
+  column-gap: 14px;
+  padding: 8px 20px 40px;
+}
+@media (max-width: 1200px) { main { column-count: 3; } }
+@media (max-width: 900px)  { main { column-count: 2; } }
+@media (max-width: 600px)  { main { column-count: 1; } }
+
+.card {
+  break-inside: avoid;
+  background: #161616;
+  border: 1px solid #272727;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 14px;
+  position: relative;
+  font-size: 14px;
+}
+.card.has-accent { border-left-width: 4px; border-left-style: solid; }
+.card.pinned { border-top-color: #f97316; }
+.card .pinned-badge { color: #f97316; font-size: 11px; font-weight: 700; }
+.card .card-meta { color: #777; font-size: 11px; margin-bottom: 6px; display: flex; gap: 6px; align-items: center; }
+.card .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.card .source-badge {
+  position: absolute; bottom: 8px; right: 10px;
+  font-family: monospace; font-size: 10px; color: #666;
+}
+.card .menu-btn {
+  position: absolute; top: 8px; right: 8px;
+  display: none; padding: 2px 8px;
+}
+.card:hover .menu-btn { display: block; }
+.card:hover { border-color: #3a3a3a; }
+.card .content :first-child { margin-top: 0; }
+.card .content :last-child { margin-bottom: 0; }
+.card .content img { max-width: 100%; border-radius: 4px; }
+.card mark { background: #facc15; color: #0d0d0d; }
+
+.todo-progress {
+  display: inline-block; width: 60px; height: 4px;
+  background: #272727; border-radius: 999px; overflow: hidden;
+  vertical-align: middle;
+}
+.todo-progress > span { display: block; height: 100%; }
+.todo-counter { font-size: 11px; color: #999; float: right; }
+.todo-item { display: flex; gap: 8px; align-items: baseline; }
+.todo-item.checked label { text-decoration: line-through; color: #666; }
+
+/* Calendar event cards */
+.card.calendar { border-left: 4px solid #5a4fcf; }
+.card.calendar .cal-badge {
+  color: #a78bfa; font-size: 10px; font-weight: 700;
+  text-transform: uppercase;
+}
+.card.calendar.past { opacity: 0.65; }
+.card.calendar.orphaned { border-left-color: #f97316; }
+
+/* Link previews */
+.link-preview {
+  display: block; margin-top: 8px; padding: 8px;
+  border: 1px solid #272727; border-radius: 6px;
+  color: inherit; text-decoration: none; font-size: 12px;
+}
+.link-preview .lp-title { font-weight: 600; }
+.link-preview .lp-desc { color: #888; }
+
+/* Composer / overlays */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 8vh; z-index: 100;
+}
+.composer {
+  background: #161616; border: 1px solid #333; border-radius: 10px;
+  width: min(640px, 92vw);
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.composer textarea { min-height: 160px; font-family: ui-monospace, monospace; resize: vertical; }
+.composer-tabs { display: flex; gap: 4px; }
+.composer-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.composer-row input[type="text"] { flex: 1; }
+.composer-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.reminder-section { font-size: 13px; color: #aaa; }
+#todo-items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+#todo-items input[type="text"] { width: 100%; }
+
+/* Reminder banners */
+#reminder-banners { position: sticky; top: 0; z-index: 200; }
+.reminder-banner {
+  display: flex; align-items: center; gap: 12px;
+  background: #422006; color: #fdba74;
+  padding: 10px 20px; border-bottom: 1px solid #7c2d12;
+}
+.reminder-banner button { margin-left: auto; }
+
+/* Settings */
+#calendar-prefs { display: flex; flex-direction: column; gap: 8px; }
+.cal-pref-row { display: flex; gap: 10px; align-items: center; font-size: 13px; }

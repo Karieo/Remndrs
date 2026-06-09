@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remndrs</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body data-user-id="{{ user.id }}" data-voice-enabled="{{ '1' if voice_enabled else '0' }}">
+
+  <div id="reminder-banners"></div>
+
+  <header>
+    <span class="wordmark">Remndrs</span>
+    <nav class="feed-toggle">
+      <button id="feed-my" class="active">My Feed</button>
+      <button id="feed-shared">Shared</button>
+    </nav>
+    <div class="header-right">
+      <button id="settings-btn" title="Settings">···</button>
+      <button id="logout-btn">Log out</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search notes… (press /)">
+    <button id="new-note-btn" class="round-btn" title="New note (N)">+</button>
+  </div>
+
+  <div class="tag-bar" id="tag-bar">
+    <button id="add-tag-btn">+ Add Tag</button>
+    <button id="edit-tags-btn"># Edit Tags</button>
+    <span id="tag-pills"></span>
+    <button id="clear-filter-btn" hidden>Clear</button>
+  </div>
+  <div id="filter-label" class="filter-label" hidden></div>
+
+  <main id="cards"></main>
+
+  <!-- Composer -->
+  <div id="composer-overlay" class="overlay" hidden>
+    <div class="composer">
+      <div class="composer-tabs">
+        <button id="tab-note" class="active">Note</button>
+        <button id="tab-todo">To-Do List</button>
+      </div>
+      <textarea id="composer-content" placeholder="Write a note… markdown supported"></textarea>
+      <div id="todo-editor" hidden>
+        <input type="text" id="todo-title" placeholder="Title">
+        <ul id="todo-items"></ul>
+      </div>
+      <div class="composer-row">
+        <input type="text" id="composer-tags" placeholder="#tags, comma separated">
+        <span class="feed-switch">
+          <label><input type="radio" name="cfeed" value="private" checked> Private</label>
+          <label><input type="radio" name="cfeed" value="shared"> Shared</label>
+        </span>
+        <button id="voice-btn" hidden title="Record / upload audio">🎤</button>
+        <input type="file" id="voice-file" accept="audio/*" hidden>
+      </div>
+      <details class="reminder-section">
+        <summary>Add reminder</summary>
+        <input type="datetime-local" id="reminder-at">
+        <label><input type="checkbox" id="reminder-web" checked> Web</label>
+        <label><input type="checkbox" id="reminder-sms" checked> SMS</label>
+      </details>
+      <div class="composer-actions">
+        <button id="composer-cancel">Cancel</button>
+        <button id="composer-save" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="settings-overlay" class="overlay" hidden>
+    <div class="composer">
+      <h3>Calendars</h3>
+      <div id="calendar-prefs"></div>
+      <div class="composer-actions">
+        <span id="sync-status" class="muted"></span>
+        <button id="sync-now-btn">Sync now</button>
+        <button id="settings-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
