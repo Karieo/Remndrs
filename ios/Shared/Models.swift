@@ -14,9 +14,12 @@ struct Note: Codable, Identifiable, Hashable {
     var tags: [TagRef]
     var todos: [TodoItem]
     var attachments: [AttachmentRef]
+    var share: ShareInfo?
+    var replies: [Reply]
 
     enum CodingKeys: String, CodingKey {
         case id, feed, type, content, source, pinned, tags, todos, attachments
+        case share, replies
         case userId = "user_id"
         case userName = "user_name"
         case createdAt = "created_at"
@@ -29,6 +32,44 @@ struct Note: Codable, Identifiable, Hashable {
 struct TagRef: Codable, Hashable {
     let name: String
     let color: String
+}
+
+struct ShareInfo: Codable, Hashable {
+    let senderId: String
+    let senderName: String
+    let recipientId: String
+    let recipientName: String
+    let message: String?
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case senderId = "sender_id"
+        case senderName = "sender_name"
+        case recipientId = "recipient_id"
+        case recipientName = "recipient_name"
+        case createdAt = "created_at"
+    }
+}
+
+struct Reply: Codable, Hashable, Identifiable {
+    let id: String
+    let userId: String
+    let userName: String
+    let text: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, text
+        case userId = "user_id"
+        case userName = "user_name"
+        case createdAt = "created_at"
+    }
+}
+
+struct Person: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
 }
 
 struct Tag: Codable, Identifiable, Hashable {

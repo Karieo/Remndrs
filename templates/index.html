@@ -58,6 +58,21 @@
   </div>
 </div>
 
+<!-- Share with a person -->
+<div class="overlay" id="shareOverlay" onclick="if(event.target===this)closeShare()">
+  <div class="sheet">
+    <div class="sheet-h">Share with…</div>
+    <div class="sheet-sub">Send this note to someone — they can reply back</div>
+    <div class="sheet-quote" id="shareQuote"></div>
+    <div class="people-grid" id="peopleGrid"></div>
+    <div class="field"><span>Note</span><input id="shareMsg" type="text" placeholder="Add a message (optional)…"></div>
+    <div class="sheet-foot">
+      <button class="sx" onclick="closeShare()">Cancel</button>
+      <button class="sx go" onclick="confirmShare()">Share →</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add tag -->
 <div class="overlay" id="tagAddOverlay" onclick="if(event.target===this)closeTagAdd()">
   <div class="sheet">

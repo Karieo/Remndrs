@@ -6,11 +6,17 @@ struct NoteCardView: View {
     let myUserID: String
     var showSender = false
     var onSend: (() -> Void)?
+    var onShareWith: (() -> Void)?
     var onDelete: (() -> Void)?
     var onToggleTodo: ((TodoItem) -> Void)?
+    var onReply: ((String) -> Void)?
+
+    @State private var replyText = ""
+    @State private var threadExpanded = false
 
     private var channel: Channel { Channel(source: note.source) }
-    private var isOutgoing: Bool { note.userId == myUserID }
+    private var senderID: String { note.share?.senderId ?? note.userId }
+    private var isOutgoing: Bool { senderID == myUserID }
 
     private var accentColor: Color {
         if note.pinned { return Theme.accent }
@@ -20,8 +26,8 @@ struct NoteCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showSender, let name = note.userName {
-                senderHeader(name: name)
+            if showSender {
+                senderHeader
                     .padding(.bottom, 11)
             } else {
                 header
@@ -45,6 +51,10 @@ struct NoteCardView: View {
                 LinkPreviewCard(url: url)
                     .padding(.top, 11)
             }
+
+            if showSender {
+                threadSection
+            }
         }
         .padding(EdgeInsets(top: 14, leading: 15, bottom: 14, trailing: 15))
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -60,11 +70,124 @@ struct NoteCardView: View {
             if let onSend {
                 Button { onSend() } label: { Label("Send to…", systemImage: "paperplane") }
             }
+            if let onShareWith {
+                Button { onShareWith() } label: {
+                    Label("Share with…", systemImage: "person.crop.circle.badge.plus")
+                }
+            }
             if let onDelete {
                 Button(role: .destructive) { onDelete() } label: {
                     Label("Delete", systemImage: "trash")
                 }
             }
+        }
+    }
+
+    // MARK: - Reply thread (shared feed)
+
+    private struct Bubble: Identifiable {
+        let id: String
+        let name: String
+        let userID: String
+        let text: String
+    }
+
+    private var bubbles: [Bubble] {
+        var items: [Bubble] = []
+        if let share = note.share, let message = share.message, !message.isEmpty {
+            items.append(Bubble(id: "share-msg", name: share.senderName,
+                                userID: share.senderId, text: message))
+        }
+        items += note.replies.map {
+            Bubble(id: $0.id, name: $0.userName, userID: $0.userId, text: $0.text)
+        }
+        return items
+    }
+
+    private var counterpartName: String {
+        guard let share = note.share else { return note.userName ?? "them" }
+        let full = isOutgoing ? share.recipientName : share.senderName
+        return full.components(separatedBy: " ").first ?? full
+    }
+
+    private var threadSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if !bubbles.isEmpty {
+                if threadExpanded {
+                    Divider().overlay(Theme.border)
+                    ForEach(bubbles) { bubble in
+                        replyRow(bubble)
+                    }
+                } else {
+                    Button {
+                        threadExpanded = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "bubble.left").font(.system(size: 10))
+                            Text("\(bubbles.count) \(bubbles.count == 1 ? "reply" : "replies") · view")
+                        }
+                        .font(Theme.mono(9)).kerning(0.4)
+                        .foregroundStyle(Theme.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if onReply != nil {
+                HStack(spacing: 8) {
+                    TextField("", text: $replyText,
+                              prompt: Text("Reply to \(counterpartName)…")
+                                .font(Theme.body(13.5, italic: true))
+                                .foregroundStyle(Theme.textFaint))
+                        .font(Theme.body(13.5))
+                        .foregroundStyle(Theme.text)
+                        .padding(.vertical, 9)
+                        .padding(.horizontal, 14)
+                        .background(Theme.surface2, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 1))
+                        .onSubmit { submitReply() }
+                    Button { submitReply() } label: {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.bg)
+                            .frame(width: 34, height: 34)
+                            .background(Theme.accent, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, 11)
+    }
+
+    private func submitReply() {
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        replyText = ""
+        threadExpanded = true
+        onReply?(text)
+    }
+
+    private func replyRow(_ bubble: Bubble) -> some View {
+        let mine = bubble.userID == myUserID
+        return HStack(alignment: .top, spacing: 8) {
+            if mine { Spacer(minLength: 40) }
+            if !mine { Avatar(name: bubble.name, size: 24) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                Text(bubble.text)
+                    .font(Theme.body(13.5))
+                    .foregroundStyle(Theme.text)
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 11)
+                    .background(mine ? Theme.accent.opacity(0.14) : Theme.surface2,
+                                in: RoundedRectangle(cornerRadius: 11))
+                    .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(
+                        mine ? Theme.accent.opacity(0.3) : Theme.border, lineWidth: 1))
+                Text(mine ? "You" : bubble.name.components(separatedBy: " ").first ?? "")
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.textFaint)
+            }
+            if mine { Avatar(name: "You", size: 24) }
+            if !mine { Spacer(minLength: 40) }
         }
     }
 
@@ -97,18 +220,24 @@ struct NoteCardView: View {
         }
     }
 
-    private func senderHeader(name: String) -> some View {
-        HStack(spacing: 10) {
-            Avatar(name: isOutgoing ? "You" : name)
+    private var senderHeader: some View {
+        let displayName = isOutgoing
+            ? (note.share?.recipientName ?? "You")
+            : (note.share?.senderName ?? note.userName ?? "Someone")
+        let dirText = isOutgoing
+            ? (note.share != nil ? "you shared with \(counterpartName)" : "you shared")
+            : "shared with you"
+        return HStack(spacing: 10) {
+            Avatar(name: displayName)
             VStack(alignment: .leading, spacing: 3) {
-                Text(isOutgoing ? "You" : name)
+                Text(isOutgoing && note.share == nil ? "You" : displayName)
                     .font(Theme.body(14, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 HStack(spacing: 6) {
                     HStack(spacing: 3) {
                         Image(systemName: isOutgoing ? "arrow.right" : "arrow.left")
                             .font(.system(size: 8, weight: .bold))
-                        Text(isOutgoing ? "you shared" : "shared with you")
+                        Text(dirText)
                     }
                     .font(Theme.mono(10))
                     .foregroundStyle(isOutgoing ? Color(hex: 0x7C6FCD) : Color(hex: 0x4ADE80))

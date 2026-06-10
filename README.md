@@ -114,6 +114,22 @@ and turn notes into iCloud events from the card menu.
 
 See [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md).
 
+## Adding a second user
+
+There's deliberately no admin UI. Create the account from the app directory:
+
+```bash
+python3 -c "
+import bcrypt, database as db
+db.create_user('Mia', bcrypt.hashpw(b'her-password', bcrypt.gensalt()).decode(),
+               email='mia@example.com')"
+```
+
+They log in with that name/password. Once a second user exists, the card menu's
+**Share with…** sends a note to them — it lands in their Shared feed with your
+name on it, and either of you can reply in the thread on the card. Replies are
+also appended to the note's `.md` file under a `## Replies` heading.
+
 ## Auto-start on login
 
 `setup.sh` installs `com.remndrs.plist` into `~/Library/LaunchAgents` so the

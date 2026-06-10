@@ -87,6 +87,22 @@ struct APIClient {
         _ = try await send(path: "api/notes/\(id)", method: "DELETE")
     }
 
+    func users() async throws -> [Person] {
+        try JSONDecoder().decode([Person].self, from: try await send(path: "api/users"))
+    }
+
+    func shareNote(id: String, recipientID: String, message: String?) async throws -> Note {
+        var body: [String: Any] = ["recipient_id": recipientID]
+        if let message, !message.isEmpty { body["message"] = message }
+        let data = try await send(path: "api/notes/\(id)/share", method: "POST", json: body)
+        return try JSONDecoder().decode(Note.self, from: data)
+    }
+
+    func replyToNote(id: String, text: String) async throws {
+        _ = try await send(path: "api/notes/\(id)/replies", method: "POST",
+                           json: ["text": text])
+    }
+
     func sendNote(id: String, channel: String, to: String?) async throws {
         var body: [String: Any] = ["channel": channel]
         if let to, !to.isEmpty { body["to"] = to }

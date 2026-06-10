@@ -81,6 +81,8 @@ struct FeedView: View {
     /// When non-nil the feed is locked (Shared tab); otherwise Mine/Shared toggles.
     var lockedFeed: String?
     @State private var sendTarget: Note?
+    @State private var shareTarget: Note?
+    @State private var people: [Person] = []
     @State private var sharedCount = 0
 
     private var myUserID: String { session.credentials?.userID ?? "" }
@@ -98,6 +100,22 @@ struct FeedView: View {
             model.feed = lockedFeed ?? model.feed
             await model.load(api: session.api)
             await refreshSharedCount()
+            people = ((try? await session.api?.users()) ?? [])
+                .filter { $0.id != myUserID }
+        }
+        .confirmationDialog("Share with…", isPresented: .init(
+            get: { shareTarget != nil },
+            set: { if !$0 { shareTarget = nil } })) {
+            ForEach(people) { person in
+                Button(person.name) {
+                    if let note = shareTarget {
+                        Task { await share(note, with: person) }
+                    }
+                }
+            }
+        } message: {
+            Text(people.isEmpty ? "No one else here yet — add a second user on the Mac."
+                 : "They'll see it in Shared and can reply.")
         }
         .onChange(of: model.feed) { Task { await model.load(api: session.api) } }
         .onChange(of: model.channel) { Task { await model.load(api: session.api) } }
@@ -171,8 +189,12 @@ struct FeedView: View {
                             myUserID: myUserID,
                             showSender: model.feed == "shared",
                             onSend: { sendTarget = note },
+                            onShareWith: { shareTarget = note },
                             onDelete: { Task { await delete(note) } },
-                            onToggleTodo: { todo in Task { await toggle(todo, in: note) } })
+                            onToggleTodo: { todo in Task { await toggle(todo, in: note) } },
+                            onReply: model.feed == "shared"
+                                ? { text in Task { await reply(to: note, text: text) } }
+                                : nil)
                     case .event(let event):
                         EventCardView(event: event)
                     }
@@ -202,6 +224,18 @@ struct FeedView: View {
 
     private func refreshSharedCount() async {
         sharedCount = (try? await session.api?.notes(feed: "shared").count) ?? 0
+    }
+
+    private func share(_ note: Note, with person: Person) async {
+        _ = try? await session.api?.shareNote(id: note.id, recipientID: person.id,
+                                              message: nil)
+        await model.load(api: session.api)
+        await refreshSharedCount()
+    }
+
+    private func reply(to note: Note, text: String) async {
+        try? await session.api?.replyToNote(id: note.id, text: text)
+        await model.load(api: session.api)
     }
 }
 

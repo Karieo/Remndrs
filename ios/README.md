@@ -62,7 +62,7 @@ RemndrsShare/         share extension (URL / text / image → note)
 - Reminders created on the server between syncs that fire before the next
   sync won't raise a local notification (SMS/web still fire server-side).
   Sync runs on app open, via background refresh, and from Settings.
-- Reply threads from the design mockup aren't implemented — the backend has
-  no reply model yet.
 - No offline queue: saving a note with no connectivity shows an error and
   keeps your text in the composer.
+- Reply threads refresh on pull/app-open (no SSE on iOS yet); the web UI
+  updates live.

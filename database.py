@@ -178,6 +178,28 @@ CREATE TABLE IF NOT EXISTS note_calendar_links (
   FOREIGN KEY (event_id) REFERENCES calendar_events(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS note_shares (
+  id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  recipient_id TEXT NOT NULL,
+  message TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+  FOREIGN KEY (sender_id) REFERENCES users(id),
+  FOREIGN KEY (recipient_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS note_replies (
+  id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   content,
   content='notes',
@@ -398,6 +420,8 @@ def note_to_dict(row):
     note['user_name'] = owner['name'] if owner else None
     note['todos'] = [{**dict(t), 'checked': bool(t['checked'])} for t in todos]
     note['attachments'] = [dict(a) for a in atts]
+    note['share'] = get_note_share(note['id'])
+    note['replies'] = get_replies(note['id'])
     return note
 
 
@@ -524,6 +548,54 @@ def recent_notes(user_id, limit=5):
             'SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
             (user_id, limit)).fetchall()
     return [note_to_dict(r) for r in rows]
+
+
+# ── Shares & replies ─────────────────────────────────────
+
+def create_share(note_id, sender_id, recipient_id, message=None):
+    share_id = str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO note_shares (id, note_id, sender_id, recipient_id, message, '
+            'created_at) VALUES (?,?,?,?,?,?)',
+            (share_id, note_id, sender_id, recipient_id, message, now_iso()))
+    return get_note_share(note_id)
+
+
+def get_note_share(note_id):
+    """Latest share for a note, with sender/recipient names resolved."""
+    with connect() as conn:
+        row = conn.execute(
+            'SELECT s.*, su.name AS sender_name, ru.name AS recipient_name '
+            'FROM note_shares s '
+            'JOIN users su ON su.id = s.sender_id '
+            'JOIN users ru ON ru.id = s.recipient_id '
+            'WHERE s.note_id = ? ORDER BY s.created_at DESC LIMIT 1',
+            (note_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def add_reply(note_id, user_id, text):
+    reply_id = str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO note_replies (id, note_id, user_id, text, created_at) '
+            'VALUES (?,?,?,?,?)',
+            (reply_id, note_id, user_id, text, now_iso()))
+        row = conn.execute(
+            'SELECT r.*, u.name AS user_name FROM note_replies r '
+            'JOIN users u ON u.id = r.user_id WHERE r.id = ?',
+            (reply_id,)).fetchone()
+    return dict(row)
+
+
+def get_replies(note_id):
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT r.*, u.name AS user_name FROM note_replies r '
+            'JOIN users u ON u.id = r.user_id WHERE r.note_id = ? '
+            'ORDER BY r.created_at', (note_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Attachments ──────────────────────────────────────────

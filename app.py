@@ -253,6 +253,56 @@ def api_delete_note(note_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/users')
+def api_list_users():
+    """Other people in the system — for the share-with picker."""
+    return jsonify([{'id': u['id'], 'name': u['name']} for u in db.list_users()])
+
+
+@app.route('/api/notes/<note_id>/share', methods=['POST'])
+def api_share_note(note_id):
+    """Share a note with a person: moves it to the shared feed with
+    sender→recipient attribution and an optional message."""
+    note = db.get_note(note_id)
+    if not _can_see(note, session['user_id']):
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json(silent=True) or {}
+    recipient = db.get_user(data.get('recipient_id', ''))
+    if not recipient:
+        return jsonify({'error': 'Recipient not found'}), 404
+    if recipient['id'] == session['user_id']:
+        return jsonify({'error': "That's you"}), 400
+
+    db.create_share(note_id, session['user_id'], recipient['id'],
+                    message=(data.get('message') or '').strip() or None)
+    owner = db.get_user(note['user_id'])
+    if note['feed'] != 'shared':
+        files.move_note_file(note, owner['name'], note['feed'])
+        db.update_note(note_id, feed='shared', filename=None)
+    note = db.get_note(note_id)
+    note = _persist_note_file(note)
+    sse.push_note_event('note_updated', note)
+    return jsonify(note), 201
+
+
+@app.route('/api/notes/<note_id>/replies', methods=['POST'])
+def api_reply_to_note(note_id):
+    note = db.get_note(note_id)
+    if not _can_see(note, session['user_id']):
+        return jsonify({'error': 'Not found'}), 404
+    if note['feed'] != 'shared':
+        return jsonify({'error': 'Replies are for shared notes'}), 400
+    text = ((request.get_json(silent=True) or {}).get('text') or '').strip()
+    if not text:
+        return jsonify({'error': 'text is required'}), 400
+
+    reply = db.add_reply(note_id, session['user_id'], text)
+    note = db.get_note(note_id)
+    note = _persist_note_file(note)
+    sse.push_note_event('note_updated', note)
+    return jsonify(reply), 201
+
+
 @app.route('/api/notes/<note_id>/send', methods=['POST'])
 def api_send_note(note_id):
     """Push a note back out via SMS or email ("send anywhere")."""

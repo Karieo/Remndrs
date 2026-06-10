@@ -38,10 +38,17 @@ const AV_COLORS = ['#4ade80','#60a5fa','#fb923c','#a78bfa','#f472b6','#2dd4bf'];
 
 /* ─── State ────────────────────────────────────────────────── */
 const ME = { id: document.body.dataset.userId, name: document.body.dataset.userName };
-let notes = [], events = [], tags = [];
+let notes = [], events = [], tags = [], people = [];
 let activeFeed = 'private', activeChan = 'all', activeTags = new Set(), search = '';
-let previews = {}, openCalNotes = new Set();
+let previews = {}, openCalNotes = new Set(), openThreads = new Set();
 let searchTimer;
+
+const avatarColor = (name) =>
+  AV_COLORS[[...String(name)].reduce((a,c)=>a+c.charCodeAt(0),0) % AV_COLORS.length];
+const initialsOf = (name) =>
+  String(name).split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
+
+async function loadPeople(){ people = (await api('/api/users').catch(()=>[])).filter(u=>u.id!==ME.id); }
 
 /* ─── API helper ───────────────────────────────────────────── */
 async function api(path, opts = {}) {
@@ -131,27 +138,36 @@ function cardHTML(n) {
       <div class="card-meta">${pin}${chip}<span class="card-date">${fmtDate(n.created_at)}</span></div>
       <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
     </div>`;
-  const outgoing = activeFeed === 'shared' && n.user_id === ME.id;
+  const outgoing = activeFeed === 'shared' && shareSenderId(n) === ME.id;
   return `<div class="card ${n.pinned?'pinned':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}">
     ${header}
     ${tagsRow}
     ${noteBodyHTML(n)}
+    ${activeFeed==='shared' ? threadHTML(n) : ''}
     ${dropdownHTML(n)}
   </div>`;
 }
 
+const shareSenderId = (n) => n.share ? n.share.sender_id : n.user_id;
+
 function sharedHeadHTML(n) {
-  const outgoing = n.user_id === ME.id;
-  const name = outgoing ? 'You' : (n.user_name || 'Someone');
-  const initials = name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
-  const color = outgoing ? CH.app.c : AV_COLORS[[...name].reduce((a,c)=>a+c.charCodeAt(0),0) % AV_COLORS.length];
+  const senderId = shareSenderId(n);
+  const senderName = n.share ? n.share.sender_name : (n.user_name || 'Someone');
+  const outgoing = senderId === ME.id;
+  // Outgoing cards still show who it went to; incoming show who sent it.
+  const displayName = outgoing
+    ? (n.share ? n.share.recipient_name : 'You') : senderName;
+  const color = outgoing && !n.share ? CH.app.c : avatarColor(displayName);
+  const dirText = outgoing
+    ? (n.share ? `you shared with ${esc(n.share.recipient_name.split(' ')[0])}` : 'you shared')
+    : 'shared with you';
   const ch = CH[noteChan(n)];
   return `<div class="share-head">
-    <div class="avatar" style="background:${color}">${esc(initials)}</div>
+    <div class="avatar" style="background:${color}">${esc(initialsOf(displayName))}</div>
     <div class="share-who">
-      <div class="share-name">${esc(name)}</div>
+      <div class="share-name">${esc(outgoing && !n.share ? 'You' : displayName)}</div>
       <div class="share-ctx">
-        <span class="dir" style="--dir:${outgoing?'#7c6fcd':'#4ade80'}">${svg(outgoing?'dirOut':'dirIn')} ${outgoing?'you shared':'shared with you'}</span>
+        <span class="dir" style="--dir:${outgoing?'#7c6fcd':'#4ade80'}">${svg(outgoing?'dirOut':'dirIn')} ${dirText}</span>
         <span>·</span>
         <span class="chan-chip" style="--ch:${ch.c};padding:1px 6px 1px 4px;">${svg(ch.ic)} ${ch.label}</span>
       </div>
@@ -159,6 +175,97 @@ function sharedHeadHTML(n) {
     <span class="card-date">${fmtDate(n.created_at)}</span>
     <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
   </div>`;
+}
+
+/* ─── Reply threads ────────────────────────────────────────── */
+function replyBubbleHTML(name, userId, text, at) {
+  const mine = userId === ME.id;
+  const who = mine ? 'You' : String(name).split(' ')[0];
+  return `<div class="reply ${mine?'me':''}">
+    <div class="avatar" style="background:${mine?CH.app.c:avatarColor(name)}">${esc(initialsOf(mine?ME.name:name))}</div>
+    <div><div class="reply-bubble">${esc(text)}</div><div class="reply-meta">${esc(who)} · ${fmtDate(at)}</div></div>
+  </div>`;
+}
+
+function threadHTML(n) {
+  // The share message reads as the opening bubble of the conversation.
+  const bubbles = [];
+  if (n.share && n.share.message) {
+    bubbles.push(replyBubbleHTML(n.share.sender_name, n.share.sender_id,
+                                 n.share.message, n.share.created_at));
+  }
+  for (const r of (n.replies || [])) {
+    bubbles.push(replyBubbleHTML(r.user_name, r.user_id, r.text, r.created_at));
+  }
+  const count = bubbles.length;
+  const open = openThreads.has(n.id);
+  const thread = open && count
+    ? `<div class="thread">${bubbles.join('')}</div>`
+    : (count ? `<button class="thread-toggle" onclick="toggleThread('${n.id}')">${svg('reply')} ${count} ${count===1?'reply':'replies'} · view</button>` : '');
+  const who = shareSenderId(n) === ME.id
+    ? (n.share ? n.share.recipient_name.split(' ')[0] : 'them')
+    : (n.share ? n.share.sender_name.split(' ')[0] : (n.user_name||'them').split(' ')[0]);
+  return `${thread}
+    <div class="reply-input-row">
+      <input class="reply-input" id="reply-${n.id}" placeholder="Reply to ${esc(who)}…"
+        onclick="event.stopPropagation()"
+        onkeydown="if(event.key==='Enter')sendReply('${n.id}')">
+      <button class="reply-send" onclick="sendReply('${n.id}')" title="Send reply">${svg('send')}</button>
+    </div>`;
+}
+
+function toggleThread(id){ openThreads.has(id)?openThreads.delete(id):openThreads.add(id); renderCards(); }
+
+async function sendReply(id){
+  const input = document.getElementById('reply-'+id);
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    await api(`/api/notes/${id}/replies`, { method:'POST', body: JSON.stringify({ text }) });
+    openThreads.add(id);
+    const n = notes.find(x=>x.id===id);
+    const who = n && n.share
+      ? (n.share.sender_id===ME.id ? n.share.recipient_name : n.share.sender_name).split(' ')[0]
+      : 'them';
+    toast(`${svg('reply',13)} Reply sent to ${esc(who)}`);
+    loadNotes();
+  } catch (e) { toast(esc(e.message)); }
+}
+
+/* ─── Share with a person ──────────────────────────────────── */
+let shareNoteId = null, sharePerson = null;
+function openShare(id){
+  closeAllMenus();
+  shareNoteId = id;
+  sharePerson = people.length === 1 ? people[0].id : null;
+  const n = notes.find(x=>x.id===id);
+  document.getElementById('shareQuote').textContent = (n.content||'').replace(/[#*`>\[\]]/g,' ').trim().slice(0,140);
+  document.getElementById('shareMsg').value = '';
+  renderPeopleGrid();
+  document.getElementById('shareOverlay').classList.add('open');
+}
+function renderPeopleGrid(){
+  document.getElementById('peopleGrid').innerHTML = people.length ? people.map(p=>
+    `<div class="person-opt ${sharePerson===p.id?'sel':''}" onclick="pickPerson('${p.id}')">
+      <div class="avatar" style="background:${avatarColor(p.name)}">${esc(initialsOf(p.name))}</div>
+      <span class="pname">${esc(p.name)}</span>
+      <span class="pcheck">${svg('check')}</span>
+    </div>`).join('')
+    : '<div class="grid-empty">No one else here yet — add a second user on the Mac first.</div>';
+}
+function pickPerson(id){ sharePerson = id; renderPeopleGrid(); }
+function closeShare(){ document.getElementById('shareOverlay').classList.remove('open'); }
+async function confirmShare(){
+  if (!sharePerson){ toast('Pick someone first'); return; }
+  const message = document.getElementById('shareMsg').value.trim();
+  try {
+    await api(`/api/notes/${shareNoteId}/share`, { method:'POST',
+      body: JSON.stringify({ recipient_id: sharePerson, message }) });
+    const name = (people.find(p=>p.id===sharePerson)||{}).name || '';
+    closeShare();
+    toast(`${svg('check',13)} Shared with ${esc(name.split(' ')[0])}`);
+    loadNotes(); refreshSharedBadge();
+  } catch (e) { toast(esc(e.message)); }
 }
 
 function eventCardHTML(ev) {
@@ -198,7 +305,8 @@ function dropdownHTML(n) {
     <div class="dd-label">Send to</div>
     ${sendItems}
     <div class="dd-sep"></div>
-    <div class="dd-item" style="--c:#60a5fa" onclick="moveFeed('${n.id}')"><span class="di">${svg('reply')}</span> ${moveLabel}</div>
+    <div class="dd-item" style="--c:#60a5fa" onclick="openShare('${n.id}')"><span class="di">${svg('reply')}</span> Share with…</div>
+    <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
     <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
     <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
@@ -624,7 +732,7 @@ function startStream(){
 
 /* ─── Keyboard ─────────────────────────────────────────────── */
 document.addEventListener('keydown', e=>{
-  if (e.key==='Escape'){ closeSheet(); closeComposer(); closeTagAdd(); closeTagEdit(); closeSettings(); closeAllMenus(); }
+  if (e.key==='Escape'){ closeSheet(); closeShare(); closeComposer(); closeTagAdd(); closeTagEdit(); closeSettings(); closeAllMenus(); }
   if ((e.metaKey||e.ctrlKey) && e.key==='Enter' && document.getElementById('composer').classList.contains('open')){ e.preventDefault(); saveNote(); }
   if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
   if (e.key==='n' || e.key==='N'){ e.preventDefault(); openComposer(); }
@@ -638,6 +746,7 @@ renderChanRail();
 setThemeIcon();
 loadTags();
 loadNotes();
+loadPeople();
 refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});
