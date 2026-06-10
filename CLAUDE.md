@@ -39,7 +39,7 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 
 **Key invariants:**
 
-- **Never crash on missing config.** Every integration (Twilio, OpenAI, Mailgun, CalDAV) checks its own env vars and silently disables itself. Heavy SDK imports (`twilio`, `openai`, `caldav`) are deferred inside functions so the app starts without them being usable.
+- **Never crash on missing config.** Every integration (Twilio, OpenAI, Mailgun, CalDAV) checks its own env vars and silently disables itself. Heavy SDK imports (`twilio`, `openai`, `caldav`) are deferred inside functions so the app starts without them being usable. Integration credentials are editable at runtime from ⚙ Settings (owner only): `PATCH /api/settings` writes `.env` AND `os.environ`, so env reads must stay lazy (`os.getenv` at call time, never cached at import).
 - **The DB row and the `.md` file are written together.** Any code path that creates or mutates a note must call `files.write_note_file()` and push an SSE event — this includes webhook paths, not just web routes. Changing a note's feed moves its file between folders.
 - **Webhook routes (`/webhooks/*`) bypass session auth** and must verify provider signatures instead (Twilio `X-Twilio-Signature`, Mailgun HMAC). Everything else is guarded by the `before_request` session check; `PUBLIC_PATHS` in app.py is the allowlist.
 - **Tags are global, uppercase, deduplicated**, with user-assigned hex colors (`DEFAULT_PALETTE` in database.py, assigned round-robin for auto-created tags). A note's first tag drives its card's left-border color.

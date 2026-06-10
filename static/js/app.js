@@ -552,18 +552,190 @@ async function deleteTag(id){
   await loadTags(); renderTagEditList();
 }
 
-/* ─── Settings: calendars ──────────────────────────────────── */
+/* ─── Settings ─────────────────────────────────────────────── */
+let settingsTab = 'integrations';
+let settingsData = null;   // null when not owner
+
 function openSettings(){
   document.getElementById('settingsOverlay').classList.add('open');
-  loadPrefs();
+  renderSettings();
 }
 function closeSettings(){ document.getElementById('settingsOverlay').classList.remove('open'); }
-async function loadPrefs(){
-  const list = document.getElementById('prefList');
-  list.textContent = 'Looking for calendars…';
+
+async function renderSettings(){
+  settingsData = await api('/api/settings').catch(()=>null);
+  const tabs = settingsData
+    ? [['integrations','Integrations'],['people','People'],['webhooks','Webhooks'],['calendars','Calendars']]
+    : [['people','People'],['calendars','Calendars']];
+  if (!tabs.some(t=>t[0]===settingsTab)) settingsTab = tabs[0][0];
+  document.getElementById('settingsNav').innerHTML = tabs.map(([k,label])=>
+    `<button class="${settingsTab===k?'active':''}" onclick="setSettingsTab('${k}')">${label}</button>`).join('');
+  const body = document.getElementById('settingsBody');
+  if (settingsTab === 'integrations') renderIntegrations(body);
+  else if (settingsTab === 'people') renderPeopleSettings(body);
+  else if (settingsTab === 'webhooks') renderWebhooks(body);
+  else renderCalendarSettings(body);
+}
+function setSettingsTab(tab){ settingsTab = tab; renderSettings(); }
+
+/* — Integrations — */
+const SERVICES = [
+  { id:'twilio', title:'Texts & calls', status:'sms',
+    sub:'Twilio — text or call your own number to capture. <a href="https://console.twilio.com" target="_blank">console.twilio.com</a>',
+    fields:[['TWILIO_ACCOUNT_SID','Account SID'],['TWILIO_AUTH_TOKEN','Auth token'],['OWNER_PHONE_NUMBER','Your mobile number (for replies & reminders)']] },
+  { id:'openai', title:'Voice transcription', status:'voice_transcription',
+    sub:'OpenAI Whisper — turns voice memos and phone calls into notes.',
+    fields:[['OPENAI_API_KEY','API key']] },
+  { id:'mailgun', title:'Email', status:'email_in',
+    sub:'Mailgun — forward emails in, send notes out. Needs a domain.',
+    fields:[['MAILGUN_API_KEY','API key'],['MAILGUN_SIGNING_KEY','Webhook signing key'],['MAILGUN_INBOUND_ADDRESS','Inbound address (notes@yourdomain.com)']] },
+  { id:'caldav', title:'iCloud Calendar', status:'calendar',
+    sub:'Use an <a href="https://appleid.apple.com" target="_blank">app-specific password</a> — never your real Apple ID password.',
+    fields:[['CALDAV_USERNAME','Apple ID email'],['CALDAV_PASSWORD','App-specific password']] },
+];
+const SECRET_KEYS = new Set(['TWILIO_AUTH_TOKEN','OPENAI_API_KEY','MAILGUN_API_KEY','MAILGUN_SIGNING_KEY','CALDAV_PASSWORD']);
+
+function renderIntegrations(body){
+  body.innerHTML = SERVICES.map(svc => {
+    const on = settingsData.status[svc.status];
+    const fields = svc.fields.map(([key,label]) => {
+      const entry = settingsData[key] || {};
+      const secret = SECRET_KEYS.has(key);
+      const placeholder = secret ? (entry.set ? '•••••• (saved — type to replace)' : label) : label;
+      const value = secret ? '' : (entry.value || '');
+      return `<div class="set-row"><div class="field" style="margin:0">
+        <input id="env-${key}" type="${secret?'password':'text'}" placeholder="${esc(placeholder)}" value="${esc(value)}" autocomplete="off">
+      </div></div>`;
+    }).join('');
+    return `<div class="set-section">
+      <div class="set-h"><span class="set-status ${on?'on':''}"></span>${svc.title}</div>
+      <div class="set-sub">${svc.sub}</div>
+      ${fields}
+      <div class="set-test">
+        <button class="sx" onclick="saveService('${svc.id}')">Save</button>
+        <button class="sx" onclick="testService('${svc.id}')">Test</button>
+        <span class="set-test-result" id="test-${svc.id}"></span>
+      </div>
+    </div><div class="set-divider"></div>`;
+  }).join('') + `<div class="set-sub">Saved settings apply immediately — no restart needed. They're stored in the app's .env file on your Mac.</div>`;
+}
+
+async function saveService(serviceId){
+  const svc = SERVICES.find(s=>s.id===serviceId);
+  const updates = {};
+  for (const [key] of svc.fields) {
+    const value = document.getElementById('env-'+key).value.trim();
+    if (value) updates[key] = value;
+  }
+  const out = document.getElementById('test-'+serviceId);
+  if (!Object.keys(updates).length) { out.textContent = 'nothing to save'; return; }
+  await api('/api/settings', { method:'PATCH', body: JSON.stringify(updates) });
+  out.className = 'set-test-result ok';
+  out.textContent = 'saved ✓';
+  settingsData = await api('/api/settings').catch(()=>settingsData);
+}
+async function testService(serviceId){
+  const out = document.getElementById('test-'+serviceId);
+  out.className = 'set-test-result';
+  out.textContent = 'testing…';
+  const res = await api('/api/settings/test/'+serviceId, { method:'POST' }).catch(e=>({ok:false, detail:e.message}));
+  out.className = 'set-test-result ' + (res.ok ? 'ok' : 'bad');
+  out.textContent = res.detail || (res.ok ? 'OK' : 'failed');
+}
+
+/* — People — */
+async function renderPeopleSettings(body){
+  const me = await api('/api/users/me');
+  const everyone = await api('/api/users');
+  const isOwner = me.role === 'owner';
+  body.innerHTML = `
+    <div class="set-section">
+      <div class="set-h">You — ${esc(me.name)}</div>
+      <div class="set-sub">Where your capture channels route. Email = the address you send notes from/to; Remndrs number = your dedicated Twilio number.</div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Email</span><input id="me-email" value="${esc(me.email||'')}" placeholder="notes@yourdomain.com"></div></div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Mobile</span><input id="me-phone" value="${esc(me.phone_number||'')}" placeholder="+1 555 123 4567"></div></div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Remndrs #</span><input id="me-twilio" value="${esc(me.twilio_number||'')}" placeholder="+1 555 000 0000 (your Twilio number)"></div></div>
+      <div class="set-test"><button class="sx" onclick="saveMe()">Save</button><span class="set-test-result" id="me-result"></span></div>
+    </div>
+    <div class="set-divider"></div>
+    <div class="set-section">
+      <div class="set-h">Everyone</div>
+      <div class="set-sub">${everyone.map(u=>esc(u.name)).join(' · ')}</div>
+      ${isOwner ? `
+      <div class="set-sub" style="margin-top:10px">Add a person — they get their own private feed and can share with you:</div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Name</span><input id="new-name"></div></div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Password</span><input id="new-pass" type="password"></div></div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Email</span><input id="new-email" placeholder="optional — their inbound address"></div></div>
+      <div class="set-test"><button class="sx" onclick="addPerson()">Add person</button><span class="set-test-result" id="add-result"></span></div>
+      ` : ''}
+    </div>`;
+}
+async function saveMe(){
+  const out = document.getElementById('me-result');
+  await api('/api/users/me', { method:'PATCH', body: JSON.stringify({
+    email: document.getElementById('me-email').value,
+    phone_number: document.getElementById('me-phone').value,
+    twilio_number: document.getElementById('me-twilio').value,
+  })}).then(()=>{ out.className='set-test-result ok'; out.textContent='saved ✓'; })
+    .catch(e=>{ out.className='set-test-result bad'; out.textContent=e.message; });
+}
+async function addPerson(){
+  const out = document.getElementById('add-result');
+  await api('/api/users', { method:'POST', body: JSON.stringify({
+    name: document.getElementById('new-name').value,
+    password: document.getElementById('new-pass').value,
+    email: document.getElementById('new-email').value,
+  })}).then(u=>{ out.className='set-test-result ok'; out.textContent=`${u.name} added ✓`; loadPeople(); renderPeopleSettings(document.getElementById('settingsBody')); })
+    .catch(e=>{ out.className='set-test-result bad'; out.textContent=e.message; });
+}
+
+/* — Webhooks — */
+function renderWebhooks(body){
+  const publicURL = (settingsData.PUBLIC_URL && settingsData.PUBLIC_URL.value || '').replace(/\/$/,'');
+  const base = publicURL || 'https://your-tunnel-url';
+  body.innerHTML = `
+    <div class="set-section">
+      <div class="set-h">Public URL</div>
+      <div class="set-sub">Your Cloudflare Tunnel address (see CLOUDFLARE_SETUP.md). Saving it fills in the webhook URLs below — paste those into the Twilio / Mailgun consoles.</div>
+      <div class="set-row"><div class="field" style="margin:0"><input id="env-PUBLIC_URL" value="${esc(publicURL)}" placeholder="https://remndrs.yourdomain.com"></div></div>
+      <div class="set-test"><button class="sx" onclick="savePublicURL()">Save</button><span class="set-test-result" id="url-result"></span></div>
+    </div>
+    <div class="set-divider"></div>
+    <div class="set-section">
+      <div class="set-h">Paste these into the provider consoles</div>
+      <div class="set-sub" style="margin-bottom:10px">Twilio: number settings. Mailgun: Receiving → Routes.</div>
+      ${[['SMS', '/webhooks/sms'], ['Call answer', '/webhooks/voice/answer'],
+         ['Call audio', '/webhooks/voice'], ['Email', '/webhooks/email']].map(([label, path])=>
+        `<div class="webhook-row"><span class="wlabel">${label}</span><code>${esc(base+path)}</code>
+         <button class="sx" onclick="copyText('${esc(base+path)}')">Copy</button></div>`).join('')}
+    </div>`;
+}
+async function savePublicURL(){
+  const out = document.getElementById('url-result');
+  const value = document.getElementById('env-PUBLIC_URL').value.trim();
+  await api('/api/settings', { method:'PATCH', body: JSON.stringify({ PUBLIC_URL: value }) });
+  out.className='set-test-result ok'; out.textContent='saved ✓';
+  settingsData = await api('/api/settings');
+  renderWebhooks(document.getElementById('settingsBody'));
+}
+function copyText(text){
+  if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
+  toast(`${svg('copy',13)} Copied`);
+}
+
+/* — Calendars — */
+async function renderCalendarSettings(body){
+  body.innerHTML = `<div class="set-section">
+    <div class="set-h">Calendars</div>
+    <div class="set-sub">Enable iCloud calendars and pick their feed</div>
+    <div class="pref-list" id="prefList">Looking for calendars…</div>
+    <div class="set-test"><button class="sx" onclick="syncNow()">Sync now</button><span class="set-test-result" id="syncStatus"></span></div>
+  </div>`;
   await api('/api/calendar/calendars').catch(()=>[]);  // triggers discovery
   const prefs = await api('/api/calendar/prefs').catch(()=>[]);
   calendarPrefs = null; // invalidate send-sheet cache
+  const list = document.getElementById('prefList');
+  if (!list) return;
   list.innerHTML = prefs.length ? prefs.map(p=>
     `<div class="pref-row">
       <input type="checkbox" ${p.enabled?'checked':''} onchange="setPref('${esc(p.calendar_name)}', this.checked, null)">
@@ -573,7 +745,7 @@ async function loadPrefs(){
         <option value="shared" ${p.feed==='shared'?'selected':''}>Shared</option>
       </select>
     </div>`).join('')
-    : '<div class="grid-empty">No calendars found — check CalDAV settings in .env on the Mac.</div>';
+    : '<div class="grid-empty">No calendars found — add your Apple ID under Integrations → iCloud Calendar first.</div>';
 }
 async function setPref(name, enabled, feed){
   const body = { calendar_name: name };
@@ -585,6 +757,7 @@ async function syncNow(){
   const el = document.getElementById('syncStatus');
   el.textContent = 'Syncing…';
   const res = await api('/api/calendar/sync', { method:'POST' }).catch(e=>({error:e.message}));
+  el.className = 'set-test-result ' + (res.error ? 'bad' : 'ok');
   el.textContent = res.error ? 'Sync failed' : 'Synced just now';
   loadNotes();
 }

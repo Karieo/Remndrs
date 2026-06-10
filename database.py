@@ -286,6 +286,20 @@ def list_users():
     return [dict(r) for r in rows]
 
 
+def update_user_contact(user_id, email=None, phone_number=None, twilio_number=None):
+    sets, params = [], []
+    for column, value in (('email', email), ('phone_number', phone_number),
+                          ('twilio_number', twilio_number)):
+        if value is not None:
+            sets.append(f'{column} = ?')
+            params.append(value.strip() or None)
+    if sets:
+        params.append(user_id)
+        with connect() as conn:
+            conn.execute(f'UPDATE users SET {", ".join(sets)} WHERE id = ?', params)
+    return get_user(user_id)
+
+
 def count_users():
     with connect() as conn:
         return conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
