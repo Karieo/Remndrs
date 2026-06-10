@@ -1,19 +1,27 @@
-"""Server-Sent Events: per-user event queues pushed to open browser tabs."""
+"""Server-Sent Events: per-connection queues so every open tab/device
+gets every event. push_note_event() fans shared-feed notes out to all users."""
 
 import queue
 
-user_queues = {}  # user_id -> queue.Queue()
+_subscribers = {}  # user_id -> list[queue.Queue], one per open stream
 
 
-def get_queue(user_id):
-    if user_id not in user_queues:
-        user_queues[user_id] = queue.Queue()
-    return user_queues[user_id]
+def subscribe(user_id):
+    q = queue.Queue()
+    _subscribers.setdefault(user_id, []).append(q)
+    return q
+
+
+def unsubscribe(user_id, q):
+    try:
+        _subscribers.get(user_id, []).remove(q)
+    except ValueError:
+        pass
 
 
 def push_event(user_id, event_type, data):
-    q = get_queue(user_id)
-    q.put({'type': event_type, 'data': data})
+    for q in list(_subscribers.get(user_id, [])):
+        q.put({'type': event_type, 'data': data})
 
 
 def push_note_event(event_type, note):

@@ -643,13 +643,16 @@ def stream():
 
     def event_generator():
         import queue as _queue
-        q = sse.get_queue(user_id)
-        while True:
-            try:
-                event = q.get(timeout=30)
-                yield f'data: {json.dumps(event)}\n\n'
-            except _queue.Empty:
-                yield 'data: {"type": "heartbeat"}\n\n'
+        q = sse.subscribe(user_id)
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=30)
+                    yield f'data: {json.dumps(event)}\n\n'
+                except _queue.Empty:
+                    yield 'data: {"type": "heartbeat"}\n\n'
+        finally:
+            sse.unsubscribe(user_id, q)
 
     return Response(event_generator(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache',
