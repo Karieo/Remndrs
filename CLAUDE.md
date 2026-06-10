@@ -46,4 +46,8 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 
 ## Frontend Note
 
-The current `templates/` + `static/` UI is intentionally minimal — the real design is being produced separately (in Claude design) and will replace it. Don't invest in polishing the existing UI; keep `app.js`'s API usage as the reference for how the frontend consumes the backend.
+The `templates/` + `static/` UI implements the Claude Design handoff (warm editorial palette, Playfair/Lora/IBM Plex Mono via Google Fonts CDN, channel chips, dark/light themes). Design tokens are CSS custom properties at the top of `app.css` (`:root[data-theme=…]`); the channel color system (`CH` in app.js) must stay in sync with `Channel` in `ios/Shared/Theme.swift`. Notes' visual channel comes from `source` (`web`/`ios` → App); calendar events render as separate purple-spine cards. The card `···` menu drives send-anywhere (`/api/notes/:id/send`, `/to-event`) and person-to-person sharing (`/api/notes/:id/share` + `/replies`, backed by `note_shares`/`note_replies`; replies append to the `.md` under `## Replies`). Shared-card attribution prefers the note's `share` record over plain ownership.
+
+## iOS App (`ios/`)
+
+SwiftUI companion app (quick capture, voice→Whisper, share extension, send-anywhere sheet, reminder local notifications) implementing the Claude Design handoff. **It cannot be built in this environment** (no Xcode/iOS SDK) — the Xcode project is generated on the Mac with `cd ios && xcodegen`; see `ios/README.md`. The brand palette/type live in `ios/Shared/Theme.swift`; bundle/group identifiers in `ios/Shared/AppGroup.swift` must stay in sync with `ios/project.yml`. Mobile clients authenticate with bearer tokens (`POST /api/auth/token`), accepted by `require_login` in app.py; notes created from the app use `source: 'ios'`.

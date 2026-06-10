@@ -94,6 +94,13 @@ def _note_body(note):
     if todos:
         lines = [f'- [{"x" if t["checked"] else " "}] {t["text"]}' for t in todos]
         body = (body + '\n\n' if body.strip() else '') + '\n'.join(lines)
+    replies = note.get('replies') or []
+    if replies:
+        lines = ['', '---', '', '## Replies', '']
+        for r in replies:
+            stamp = (r.get('created_at') or '')[:16].replace('T', ' ')
+            lines.append(f'- **{r.get("user_name", "?")}** · {stamp} — {r["text"]}')
+        body = body.rstrip() + '\n'.join(lines)
     return body
 
 

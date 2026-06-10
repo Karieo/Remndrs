@@ -1,514 +1,752 @@
-/* Remndrs frontend — minimal functional UI. Final design lands separately. */
+/* Remndrs web UI — design from the Claude Design handoff wired to the API. */
 
-const state = {
-  feed: 'private',
-  tag: null,
-  search: '',
-  tags: [],
-  editingNoteId: null,
-  composerMode: 'note',
-  previews: {},
+/* ─── Icon set (inline SVG, no tofu) ───────────────────────── */
+const I = {
+  sms:'<path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/>',
+  voice:'<rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4"/>',
+  email:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  cal:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+  app:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
+  pin:'<path d="M9 4h6l-1 7 3 3v2H7v-2l3-3-1-7z"/><path d="M12 16v5"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  send:'<path d="M22 2 11 13M22 2 15 22l-4-9-9-4z"/>',
+  trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+  pinLoc:'<path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  link:'<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>',
+  dirIn:'<path d="M19 12H5M11 18l-6-6 6-6"/>',
+  dirOut:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+  reply:'<path d="M9 17l-5-5 5-5M4 12h11a5 5 0 0 1 5 5v2"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/>',
+  moon:'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
 };
+const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
-const $ = (sel) => document.querySelector(sel);
-const cardsEl = $('#cards');
+/* ─── Channels ─────────────────────────────────────────────── */
+const CH = {
+  sms:   { c:'#4ade80', label:'SMS',      ic:'sms'   },
+  voice: { c:'#a78bfa', label:'Voice',    ic:'voice' },
+  email: { c:'#fb923c', label:'Email',    ic:'email' },
+  cal:   { c:'#7c6fcd', label:'Calendar', ic:'cal'   },
+  app:   { c:'#c9a96e', label:'App',      ic:'app'   },
+};
+const DESTS = ['sms','email','cal'];
+const noteChan = (n) => ({ sms:'sms', voice:'voice', email:'email' }[n.source] || 'app');
+const PALETTE = ['#4ade80','#f87171','#60a5fa','#fb923c','#a78bfa','#facc15','#f472b6','#2dd4bf','#e5e7eb'];
+const AV_COLORS = ['#4ade80','#60a5fa','#fb923c','#a78bfa','#f472b6','#2dd4bf'];
 
-// ── Data loading ─────────────────────────────────────────
+/* ─── State ────────────────────────────────────────────────── */
+const ME = { id: document.body.dataset.userId, name: document.body.dataset.userName };
+let notes = [], events = [], tags = [], people = [];
+let activeFeed = 'private', activeChan = 'all', activeTags = new Set(), search = '';
+let previews = {}, openCalNotes = new Set(), openThreads = new Set();
+let searchTimer;
 
+const avatarColor = (name) =>
+  AV_COLORS[[...String(name)].reduce((a,c)=>a+c.charCodeAt(0),0) % AV_COLORS.length];
+const initialsOf = (name) =>
+  String(name).split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
+
+async function loadPeople(){ people = (await api('/api/users').catch(()=>[])).filter(u=>u.id!==ME.id); }
+
+/* ─── API helper ───────────────────────────────────────────── */
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
-  if (res.status === 401) { window.location = '/login'; return null; }
-  return res.json();
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  if (res.status === 401) { window.location = '/login'; throw new Error('unauthorized'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  return data;
 }
 
-async function loadTags() {
-  state.tags = await api('/api/tags') || [];
-  renderTagBar();
-}
-
-async function loadNotes() {
-  const params = new URLSearchParams();
-  params.set('feed', state.feed);
-  if (state.tag) params.set('tag', state.tag);
-  if (state.search) params.set('search', state.search);
-  const notes = await api('/api/notes?' + params) || [];
-  let events = [];
-  if (!state.search) {
-    events = await api('/api/calendar/events') || [];
-    events = events.filter((e) => state.feed === 'shared' ? e.feed === 'shared' : e.feed === 'private');
-    if (state.tag && state.tag !== 'CALENDAR') events = [];
-  }
-  renderFeed(notes, events);
-}
-
-// ── Tag bar ──────────────────────────────────────────────
-
-function renderTagBar() {
-  const wrap = $('#tag-pills');
-  wrap.innerHTML = '';
-  for (const tag of state.tags) {
-    if (!tag.count && tag.name !== state.tag) continue;
-    const btn = document.createElement('button');
-    btn.className = 'tag-pill';
-    btn.style.background = tag.color;
-    btn.textContent = '#' + tag.name;
-    if (state.tag === tag.name) btn.classList.add('active');
-    else if (state.tag) btn.classList.add('dimmed');
-    btn.onclick = () => setTagFilter(state.tag === tag.name ? null : tag.name);
-    wrap.appendChild(btn);
-  }
-  $('#clear-filter-btn').hidden = !state.tag;
-  const label = $('#filter-label');
-  label.hidden = !state.tag;
-  if (state.tag) label.textContent = 'Showing #' + state.tag;
-}
-
-function setTagFilter(tag) {
-  state.tag = tag;
-  if (tag) { state.search = ''; $('#search').value = ''; }
-  renderTagBar();
-  loadNotes();
-}
-
-// ── Cards ────────────────────────────────────────────────
-
-function renderFeed(notes, events) {
-  cardsEl.innerHTML = '';
-  const items = [
-    ...notes.map((n) => ({ kind: 'note', at: n.created_at, data: n })),
-    ...events.map((e) => ({ kind: 'event', at: e.start_at, data: e })),
-  ];
-  // Pinned notes first, then reverse-chronological
-  items.sort((a, b) => {
-    const ap = a.kind === 'note' && a.data.pinned ? 1 : 0;
-    const bp = b.kind === 'note' && b.data.pinned ? 1 : 0;
-    if (ap !== bp) return bp - ap;
-    return (b.at || '').localeCompare(a.at || '');
-  });
-  for (const item of items) {
-    cardsEl.appendChild(item.kind === 'note' ? noteCard(item.data) : eventCard(item.data));
-  }
-}
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 function fmtDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-    ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return `${mon} ${d.getDate()} · ${h}:${String(d.getMinutes()).padStart(2,'0')} ${ampm}`;
 }
 
-function highlight(html) {
-  if (!state.search) return html;
+/* ─── Data loading ─────────────────────────────────────────── */
+async function loadTags() { tags = await api('/api/tags'); renderTagBar(); }
+
+async function loadNotes() {
+  const params = new URLSearchParams({ feed: activeFeed });
+  if (search) params.set('search', search);
+  notes = await api('/api/notes?' + params);
+  events = search ? [] : (await api('/api/calendar/events').catch(() => []));
+  renderCards();
+}
+
+async function refreshSharedBadge() {
+  const shared = await api('/api/notes?feed=shared').catch(() => []);
+  const badge = document.getElementById('sharedBadge');
+  badge.textContent = shared.length;
+  badge.hidden = !shared.length;
+}
+
+/* ─── Render: channel rail ─────────────────────────────────── */
+function renderChanRail() {
+  const rail = document.getElementById('chanRail');
+  let html = `<button class="chan-filter all ${activeChan==='all'?'active':''}" onclick="setChan('all')">All</button>`;
+  for (const [k,v] of Object.entries(CH)) {
+    html += `<button class="chan-filter ${activeChan===k?'active':''}" style="--cf:${v.c}" onclick="setChan('${k}')">${svg(v.ic,12)} ${v.label}</button>`;
+  }
+  rail.innerHTML = html;
+}
+function setChan(k){ activeChan = k; renderChanRail(); renderCards(); }
+
+/* ─── Render: tag bar ──────────────────────────────────────── */
+function renderTagBar() {
+  const bar = document.getElementById('tagBar');
+  let html = `<button class="tag-bar-action" onclick="openTagAdd()">+ Add Tag</button><button class="tag-bar-action" onclick="openTagEdit()"># Edit Tags</button><div class="tag-divider"></div>`;
+  for (const t of tags) {
+    if (!t.count && !activeTags.has(t.name)) continue;
+    html += `<button class="tag-pill ${activeTags.has(t.name)?'active':''}" style="--tag-color:${t.color}" onclick="toggleTag('${esc(t.name)}')">${esc(t.name)}</button>`;
+  }
+  bar.innerHTML = html;
+}
+function toggleTag(name){ activeTags.has(name)?activeTags.delete(name):activeTags.add(name); renderTagBar(); renderCards(); }
+
+/* ─── Render: cards ────────────────────────────────────────── */
+function tagColor(name) { return (tags.find(t => t.name === name) || {}).color || CH.app.c; }
+function accentOf(n) { return n.pinned ? null : (n.tags[0] ? n.tags[0].color : CH.app.c); }
+
+function noteBodyHTML(n) {
+  if (n.type === 'todo' && n.todos.length) {
+    const done = n.todos.filter(t => t.checked).length, total = n.todos.length;
+    return `<div class="todo-title">${esc(n.content.split('\n')[0])}</div>
+      <div class="todo-progress-row"><span class="todo-progress-label">${done} / ${total}</span>
+      <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${done/total*100}%"></div></div></div>
+      ${n.todos.map(t => `<label class="todo-item"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span></label>`).join('')}`;
+  }
+  let html = `<div class="card-body">${marked.parse(n.content || '')}</div>`;
+  const url = (n.content.match(/https?:\/\/[^\s)>\]]+/) || [])[0];
+  if (url) html += `<span data-preview-url="${esc(url)}"></span>`;
+  return html;
+}
+
+function cardHTML(n) {
+  const ch = CH[noteChan(n)];
+  const chip = `<span class="chan-chip" style="--ch:${ch.c}">${svg(ch.ic)} ${ch.label}</span>`;
+  const pin = n.pinned ? `<span class="pin-flag">${svg('pin')} Pinned</span>` : '';
+  const tagsRow = n.tags.length ? `<div class="card-tags">${n.tags.map(t=>`<span class="card-tag" style="--tag-color:${t.color}">${esc(t.name)}</span>`).join('')}</div>` : '';
+  const shareHead = activeFeed === 'shared' ? sharedHeadHTML(n) : '';
+  const header = shareHead || `<div class="card-header">
+      <div class="card-meta">${pin}${chip}<span class="card-date">${fmtDate(n.created_at)}</span></div>
+      <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
+    </div>`;
+  const outgoing = activeFeed === 'shared' && shareSenderId(n) === ME.id;
+  return `<div class="card ${n.pinned?'pinned':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}">
+    ${header}
+    ${tagsRow}
+    ${noteBodyHTML(n)}
+    ${activeFeed==='shared' ? threadHTML(n) : ''}
+    ${dropdownHTML(n)}
+  </div>`;
+}
+
+const shareSenderId = (n) => n.share ? n.share.sender_id : n.user_id;
+
+function sharedHeadHTML(n) {
+  const senderId = shareSenderId(n);
+  const senderName = n.share ? n.share.sender_name : (n.user_name || 'Someone');
+  const outgoing = senderId === ME.id;
+  // Outgoing cards still show who it went to; incoming show who sent it.
+  const displayName = outgoing
+    ? (n.share ? n.share.recipient_name : 'You') : senderName;
+  const color = outgoing && !n.share ? CH.app.c : avatarColor(displayName);
+  const dirText = outgoing
+    ? (n.share ? `you shared with ${esc(n.share.recipient_name.split(' ')[0])}` : 'you shared')
+    : 'shared with you';
+  const ch = CH[noteChan(n)];
+  return `<div class="share-head">
+    <div class="avatar" style="background:${color}">${esc(initialsOf(displayName))}</div>
+    <div class="share-who">
+      <div class="share-name">${esc(outgoing && !n.share ? 'You' : displayName)}</div>
+      <div class="share-ctx">
+        <span class="dir" style="--dir:${outgoing?'#7c6fcd':'#4ade80'}">${svg(outgoing?'dirOut':'dirIn')} ${dirText}</span>
+        <span>·</span>
+        <span class="chan-chip" style="--ch:${ch.c};padding:1px 6px 1px 4px;">${svg(ch.ic)} ${ch.label}</span>
+      </div>
+    </div>
+    <span class="card-date">${fmtDate(n.created_at)}</span>
+    <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
+  </div>`;
+}
+
+/* ─── Reply threads ────────────────────────────────────────── */
+function replyBubbleHTML(name, userId, text, at) {
+  const mine = userId === ME.id;
+  const who = mine ? 'You' : String(name).split(' ')[0];
+  return `<div class="reply ${mine?'me':''}">
+    <div class="avatar" style="background:${mine?CH.app.c:avatarColor(name)}">${esc(initialsOf(mine?ME.name:name))}</div>
+    <div><div class="reply-bubble">${esc(text)}</div><div class="reply-meta">${esc(who)} · ${fmtDate(at)}</div></div>
+  </div>`;
+}
+
+function threadHTML(n) {
+  // The share message reads as the opening bubble of the conversation.
+  const bubbles = [];
+  if (n.share && n.share.message) {
+    bubbles.push(replyBubbleHTML(n.share.sender_name, n.share.sender_id,
+                                 n.share.message, n.share.created_at));
+  }
+  for (const r of (n.replies || [])) {
+    bubbles.push(replyBubbleHTML(r.user_name, r.user_id, r.text, r.created_at));
+  }
+  const count = bubbles.length;
+  const open = openThreads.has(n.id);
+  const thread = open && count
+    ? `<div class="thread">${bubbles.join('')}</div>`
+    : (count ? `<button class="thread-toggle" onclick="toggleThread('${n.id}')">${svg('reply')} ${count} ${count===1?'reply':'replies'} · view</button>` : '');
+  const who = shareSenderId(n) === ME.id
+    ? (n.share ? n.share.recipient_name.split(' ')[0] : 'them')
+    : (n.share ? n.share.sender_name.split(' ')[0] : (n.user_name||'them').split(' ')[0]);
+  return `${thread}
+    <div class="reply-input-row">
+      <input class="reply-input" id="reply-${n.id}" placeholder="Reply to ${esc(who)}…"
+        onclick="event.stopPropagation()"
+        onkeydown="if(event.key==='Enter')sendReply('${n.id}')">
+      <button class="reply-send" onclick="sendReply('${n.id}')" title="Send reply">${svg('send')}</button>
+    </div>`;
+}
+
+function toggleThread(id){ openThreads.has(id)?openThreads.delete(id):openThreads.add(id); renderCards(); }
+
+async function sendReply(id){
+  const input = document.getElementById('reply-'+id);
+  const text = input.value.trim();
+  if (!text) return;
   try {
-    const re = new RegExp('(' + state.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-    return html.replace(re, '<mark>$1</mark>');
-  } catch { return html; }
+    await api(`/api/notes/${id}/replies`, { method:'POST', body: JSON.stringify({ text }) });
+    openThreads.add(id);
+    const n = notes.find(x=>x.id===id);
+    const who = n && n.share
+      ? (n.share.sender_id===ME.id ? n.share.recipient_name : n.share.sender_name).split(' ')[0]
+      : 'them';
+    toast(`${svg('reply',13)} Reply sent to ${esc(who)}`);
+    loadNotes();
+  } catch (e) { toast(esc(e.message)); }
 }
 
-function noteCard(note) {
-  const card = document.createElement('div');
-  card.className = 'card';
-  card.dataset.id = note.id;
-  if (note.tags.length) {
-    card.classList.add('has-accent');
-    card.style.borderLeftColor = note.tags[0].color;
-  }
-  if (note.pinned) card.classList.add('pinned');
+/* ─── Share with a person ──────────────────────────────────── */
+let shareNoteId = null, sharePerson = null;
+function openShare(id){
+  closeAllMenus();
+  shareNoteId = id;
+  sharePerson = people.length === 1 ? people[0].id : null;
+  const n = notes.find(x=>x.id===id);
+  document.getElementById('shareQuote').textContent = (n.content||'').replace(/[#*`>\[\]]/g,' ').trim().slice(0,140);
+  document.getElementById('shareMsg').value = '';
+  renderPeopleGrid();
+  document.getElementById('shareOverlay').classList.add('open');
+}
+function renderPeopleGrid(){
+  document.getElementById('peopleGrid').innerHTML = people.length ? people.map(p=>
+    `<div class="person-opt ${sharePerson===p.id?'sel':''}" onclick="pickPerson('${p.id}')">
+      <div class="avatar" style="background:${avatarColor(p.name)}">${esc(initialsOf(p.name))}</div>
+      <span class="pname">${esc(p.name)}</span>
+      <span class="pcheck">${svg('check')}</span>
+    </div>`).join('')
+    : '<div class="grid-empty">No one else here yet — add a second user on the Mac first.</div>';
+}
+function pickPerson(id){ sharePerson = id; renderPeopleGrid(); }
+function closeShare(){ document.getElementById('shareOverlay').classList.remove('open'); }
+async function confirmShare(){
+  if (!sharePerson){ toast('Pick someone first'); return; }
+  const message = document.getElementById('shareMsg').value.trim();
+  try {
+    await api(`/api/notes/${shareNoteId}/share`, { method:'POST',
+      body: JSON.stringify({ recipient_id: sharePerson, message }) });
+    const name = (people.find(p=>p.id===sharePerson)||{}).name || '';
+    closeShare();
+    toast(`${svg('check',13)} Shared with ${esc(name.split(' ')[0])}`);
+    loadNotes(); refreshSharedBadge();
+  } catch (e) { toast(esc(e.message)); }
+}
 
-  let head = '';
-  if (note.pinned) head += '<span class="pinned-badge">⚑ PINNED</span> ';
-  head += `<div class="card-meta">${fmtDate(note.created_at)}` +
-    (note.feed === 'shared' ? ' 👤' : '') + '</div>';
+function eventCardHTML(ev) {
+  const past = new Date(ev.end_at) < new Date();
+  const time = ev.all_day ? 'All day'
+    : `${fmtTime(ev.start_at)} – ${fmtTime(ev.end_at)}`;
+  const meta = [ev.location, time].filter(Boolean).join(' <span>·</span> ');
+  const notesBlock = `<div id="calNotes-${ev.id}"></div>`;
+  const input = openCalNotes.has(ev.id)
+    ? `<textarea class="cal-note-input" id="calIn-${ev.id}" placeholder="Note (never touches the event)…" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter')saveCalNote('${ev.id}')"></textarea>
+       <button class="cal-add" onclick="saveCalNote('${ev.id}')">Save note</button>`
+    : `<button class="cal-add" onclick="openCalNote('${ev.id}')">+ Add note to this event</button>`;
+  return `<div class="card ${past?'past-event':''}" style="--card-accent:${ev.deleted?'#f97316':CH.cal.c}" data-event="${ev.id}">
+    <div class="card-header">
+      <div class="card-meta">
+        <span class="chan-chip" style="--ch:${CH.cal.c}">${svg('cal')} ${esc(ev.calendar_name)}</span>
+        ${ev.deleted?'<span class="pin-flag" style="color:#f97316;border-color:#f97316;">Orphaned</span>':''}
+        <span class="card-date">${fmtDate(ev.start_at)}</span>
+      </div>
+    </div>
+    <div class="cal-title">${esc(ev.title)}</div>
+    <div class="cal-meta">${svg('pinLoc')} ${meta}</div>
+    ${notesBlock}${input}
+  </div>`;
+}
+function fmtTime(iso){ const d=new Date(iso); let h=d.getHours(),ap=h>=12?'PM':'AM'; h=h%12||12; return `${h}:${String(d.getMinutes()).padStart(2,'0')} ${ap}`; }
 
-  let body = '';
-  if (note.type === 'todo' && note.todos.length) {
-    const done = note.todos.filter((t) => t.checked).length;
-    const color = note.tags.length ? note.tags[0].color : '#4ade80';
-    head += `<span class="todo-counter">${done}/${note.todos.length} ` +
-      `<span class="todo-progress"><span style="width:${(done / note.todos.length) * 100}%;background:${color}"></span></span></span>`;
-    body += `<div class="content">${highlight(marked.parse(note.content || ''))}</div>`;
-    for (const t of note.todos) {
-      body += `<div class="todo-item${t.checked ? ' checked' : ''}">` +
-        `<input type="checkbox" data-todo="${t.id}" ${t.checked ? 'checked' : ''}><label>${escapeHtml(t.text)}</label></div>`;
-    }
-  } else {
-    body = `<div class="content">${highlight(marked.parse(note.content || ''))}</div>`;
-  }
+/* ─── B3 · Send menu dropdown ──────────────────────────────── */
+function dropdownHTML(n) {
+  const sendItems = DESTS.map(d=>{
+    const v = CH[d];
+    const verb = d==='cal' ? 'Add to Calendar' : `Send via ${v.label}`;
+    return `<div class="dd-item" style="--c:${v.c}" onclick="openSheet('${n.id}','${d}')"><span class="di">${svg(v.ic)}</span> ${verb}</div>`;
+  }).join('');
+  const moveLabel = n.feed === 'shared' ? 'Move to Mine' : 'Move to Shared';
+  return `<div class="dropdown" id="dd-${n.id}">
+    <div class="dd-label">Send to</div>
+    ${sendItems}
+    <div class="dd-sep"></div>
+    <div class="dd-item" style="--c:#60a5fa" onclick="openShare('${n.id}')"><span class="di">${svg('reply')}</span> Share with…</div>
+    <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
+    <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
+    <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
+    <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
+  </div>`;
+}
 
-  let tags = '<div class="card-tags">';
-  for (const t of note.tags) {
-    tags += `<span class="tag-pill" style="background:${t.color}">#${t.name}</span>`;
-  }
-  tags += '</div>';
-
-  const source = note.source !== 'web'
-    ? `<span class="source-badge">${note.source.toUpperCase()}</span>` : '';
-
-  card.innerHTML = head + body + tags + source +
-    '<button class="menu-btn" title="Delete">✕</button>';
-
-  card.querySelector('.menu-btn').onclick = async (e) => {
-    e.stopPropagation();
-    if (!confirm('Delete this note?')) return;
-    await api('/api/notes/' + note.id, { method: 'DELETE' });
-  };
-  card.querySelectorAll('input[data-todo]').forEach((cb) => {
-    cb.onclick = async (e) => {
-      e.stopPropagation();
-      const todos = note.todos.map((t) =>
-        t.id === cb.dataset.todo ? { ...t, checked: cb.checked } : t);
-      await api('/api/notes/' + note.id, {
-        method: 'PATCH', body: JSON.stringify({ todos }),
-      });
-    };
+/* ─── Render feed ──────────────────────────────────────────── */
+function visibleNotes() {
+  return notes.filter(n => {
+    if (activeChan !== 'all' && activeChan !== 'cal' && noteChan(n) !== activeChan) return false;
+    if (activeChan === 'cal') return false;
+    if (activeTags.size && !n.tags.some(t => activeTags.has(t.name))) return false;
+    return true;
   });
-  card.onclick = () => openComposer(note);
-
-  renderLinkPreviews(card, note.content || '');
-  return card;
 }
 
-function eventCard(ev) {
-  const card = document.createElement('div');
-  card.className = 'card calendar';
-  if (new Date(ev.end_at) < new Date()) card.classList.add('past');
-  if (ev.deleted) card.classList.add('orphaned');
-  const time = ev.all_day ? new Date(ev.start_at).toLocaleDateString() : fmtDate(ev.start_at);
-  card.innerHTML =
-    `<span class="cal-badge">${escapeHtml(ev.calendar_name)}</span>` +
-    (ev.deleted ? ' <span class="pinned-badge">⚠️ ORPHANED</span>' : '') +
-    `<div class="card-meta">${time}</div>` +
-    `<strong>${escapeHtml(ev.title)}</strong>` +
-    (ev.location ? `<div class="muted">📍 ${escapeHtml(ev.location)}</div>` : '') +
-    `<div class="event-notes"></div>` +
-    `<button class="add-note-btn">+ Add note</button>`;
-  card.querySelector('.add-note-btn').onclick = async () => {
-    const ta = document.createElement('textarea');
-    ta.placeholder = 'Note (saves on blur)';
-    card.appendChild(ta);
-    ta.focus();
-    ta.onblur = async () => {
-      if (ta.value.trim()) {
-        await api('/api/calendar/notes', {
-          method: 'POST',
-          body: JSON.stringify({ event_id: ev.id, content: ta.value }),
-        });
-      }
-      ta.remove();
-    };
-  };
-  api('/api/calendar/events/' + ev.id).then((full) => {
-    if (!full || !full.notes) return;
-    const wrap = card.querySelector('.event-notes');
-    wrap.innerHTML = full.notes.map((n) =>
-      `<div class="content">${marked.parse(n.content || '')}</div>`).join('');
-  });
-  return card;
+function visibleEvents() {
+  if (activeChan !== 'all' && activeChan !== 'cal') return [];
+  if (activeTags.size || search) return [];
+  return events.filter(ev => ev.feed === activeFeed && !ev.deleted);
 }
 
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s || '';
-  return div.innerHTML;
+function renderCards() {
+  const grid = document.getElementById('grid');
+  const items = [
+    ...visibleNotes().map(n => ({ pinned: n.pinned, at: n.created_at, html: () => cardHTML(n) })),
+    ...visibleEvents().map(ev => ({ pinned: false, at: ev.start_at, html: () => eventCardHTML(ev) })),
+  ].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || String(b.at).localeCompare(String(a.at)));
+  grid.innerHTML = items.length ? items.map(i => i.html()).join('')
+    : `<div class="grid-empty">No ${activeFeed==='shared'?'shared ':''}notes match.</div>`;
+  hydrateLinkPreviews();
+  visibleEvents().forEach(ev => loadCalNotes(ev.id));
 }
 
-function renderLinkPreviews(card, content) {
-  const urls = (content.match(/https?:\/\/[^\s)>\]]+/g) || []).slice(0, 2);
-  for (const url of urls) {
-    const render = (p) => {
-      if (!p || p.error || !p.title) return;
-      const a = document.createElement('a');
-      a.className = 'link-preview';
-      a.href = url; a.target = '_blank';
-      a.innerHTML = `<div class="lp-title">${escapeHtml(p.title)}</div>` +
-        (p.description ? `<div class="lp-desc">${escapeHtml(p.description)}</div>` : '');
-      card.querySelector('.content')?.appendChild(a);
-    };
-    if (state.previews[url]) render(state.previews[url]);
-    else fetch('/api/preview?url=' + encodeURIComponent(url))
-      .then((r) => r.json()).then((p) => { state.previews[url] = p; render(p); });
-  }
-}
-
-// ── Composer ─────────────────────────────────────────────
-
-function openComposer(note) {
-  state.editingNoteId = note ? note.id : null;
-  state.composerMode = note && note.type === 'todo' ? 'todo' : 'note';
-  $('#composer-content').value = note ? note.content : '';
-  $('#composer-tags').value = note ? note.tags.map((t) => t.name).join(', ') : '';
-  document.querySelector(`input[name="cfeed"][value="${note ? note.feed : state.feed}"]`).checked = true;
-  $('#todo-items').innerHTML = '';
-  if (note && note.type === 'todo') {
-    $('#todo-title').value = note.content;
-    for (const t of note.todos) addTodoRow(t.text, t.checked);
-  } else {
-    $('#todo-title').value = '';
-  }
-  setComposerTab(state.composerMode);
-  $('#composer-overlay').hidden = false;
-  ($('#composer-content')).focus();
-}
-
-function setComposerTab(mode) {
-  state.composerMode = mode;
-  $('#tab-note').classList.toggle('active', mode === 'note');
-  $('#tab-todo').classList.toggle('active', mode === 'todo');
-  $('#composer-content').hidden = mode !== 'note';
-  $('#todo-editor').hidden = mode !== 'todo';
-  if (mode === 'todo' && !$('#todo-items').children.length) addTodoRow();
-}
-
-function addTodoRow(text = '', checked = false) {
-  const li = document.createElement('li');
-  li.innerHTML = `<span class="todo-item"><input type="checkbox" ${checked ? 'checked' : ''}>` +
-    `<input type="text" value="${escapeHtml(text)}" placeholder="To-do item"></span>`;
-  const input = li.querySelector('input[type="text"]');
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); addTodoRow(); }
-    if (e.key === 'Backspace' && !input.value && $('#todo-items').children.length > 1) {
-      e.preventDefault();
-      const prev = li.previousElementSibling;
-      li.remove();
-      prev?.querySelector('input[type="text"]')?.focus();
+function hydrateLinkPreviews() {
+  document.querySelectorAll('[data-preview-url]').forEach(async (el) => {
+    const url = el.dataset.previewUrl;
+    if (!previews[url]) {
+      previews[url] = await fetch('/api/preview?url='+encodeURIComponent(url)).then(r=>r.json()).catch(()=>({}));
     }
+    const p = previews[url];
+    if (!p || !p.title) return;
+    el.outerHTML = `<a class="link-preview" href="${esc(url)}" target="_blank" rel="noopener">
+      <div class="link-preview-img">${p.image?`<img src="${esc(p.image)}" alt="">`:svg('link')}</div>
+      <div class="link-preview-text">
+        ${p.site_name?`<div class="link-preview-site">${esc(p.site_name)}</div>`:''}
+        <div class="link-preview-title">${esc(p.title)}</div>
+      </div></a>`;
   });
-  $('#todo-items').appendChild(li);
-  input.focus();
 }
 
-async function saveComposer() {
-  const feed = document.querySelector('input[name="cfeed"]:checked').value;
-  const tags = $('#composer-tags').value.split(',').map((s) => s.trim()).filter(Boolean);
-  const body = { feed, tags, source: 'web' };
-  if (state.composerMode === 'todo') {
-    body.type = 'todo';
-    body.content = $('#todo-title').value;
-    body.todos = [...$('#todo-items').querySelectorAll('li')].map((li) => ({
-      text: li.querySelector('input[type="text"]').value,
-      checked: li.querySelector('input[type="checkbox"]').checked,
-    })).filter((t) => t.text.trim());
-  } else {
-    body.type = 'note';
-    body.content = $('#composer-content').value;
+/* ─── Calendar event notes ─────────────────────────────────── */
+async function loadCalNotes(eventId) {
+  const wrap = document.getElementById('calNotes-'+eventId);
+  if (!wrap) return;
+  const full = await api('/api/calendar/events/'+eventId).catch(() => null);
+  if (!full || !full.notes || !full.notes.length) return;
+  wrap.innerHTML = full.notes.map(n => `<div class="cal-note card-body">${marked.parse(n.content||'')}</div>`).join('');
+}
+function openCalNote(id){ openCalNotes.add(id); renderCards(); setTimeout(()=>document.getElementById('calIn-'+id)?.focus(),50); }
+async function saveCalNote(id) {
+  const input = document.getElementById('calIn-'+id);
+  const content = input.value.trim();
+  openCalNotes.delete(id);
+  if (content) {
+    await api('/api/calendar/notes', { method:'POST', body: JSON.stringify({ event_id:id, content }) }).catch(e=>toast(esc(e.message)));
+    toast(`${svg('check',13)} Note added to event`);
   }
-  if (!body.content.trim() && !(body.todos || []).length) return;
+  renderCards();
+}
 
-  const saved = state.editingNoteId
-    ? await api('/api/notes/' + state.editingNoteId, { method: 'PATCH', body: JSON.stringify(body) })
-    : await api('/api/notes', { method: 'POST', body: JSON.stringify(body) });
+/* ─── Feed / search ────────────────────────────────────────── */
+function setFeed(f){
+  activeFeed = f;
+  document.getElementById('feedMine').classList.toggle('active', f==='private');
+  document.getElementById('feedShared').classList.toggle('active', f==='shared');
+  document.getElementById('search').placeholder = f==='shared' ? 'Search shared notes…' : 'Search by text or date…';
+  closeAllMenus();
+  loadNotes();
+}
+function onSearchInput(){
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { search = document.getElementById('search').value.trim(); loadNotes(); }, 250);
+}
 
-  const remindAt = $('#reminder-at').value;
-  if (remindAt && saved) {
-    await api('/api/reminders', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: body.content.split('\n')[0].slice(0, 120) || 'Reminder',
-        fire_at: remindAt,
-        notify_web: $('#reminder-web').checked,
-        notify_sms: $('#reminder-sms').checked,
-        note_id: saved.id,
-      }),
-    });
-    $('#reminder-at').value = '';
+/* ─── Menus ────────────────────────────────────────────────── */
+function closeAllMenus(){
+  document.querySelectorAll('.dropdown.open').forEach(d=>d.classList.remove('open'));
+  document.querySelectorAll('.card-menu.open').forEach(b=>b.classList.remove('open'));
+}
+function toggleMenu(e,id){
+  e.stopPropagation();
+  const dd = document.getElementById('dd-'+id);
+  const wasOpen = dd.classList.contains('open');
+  closeAllMenus();
+  if (!wasOpen){ dd.classList.add('open'); e.currentTarget.classList.add('open'); }
+}
+document.addEventListener('click', closeAllMenus);
+
+/* ─── B4 · Send sheet ──────────────────────────────────────── */
+let sheetNote = null, sheetDest = 'sms', calendarPrefs = null;
+async function openSheet(id, dest){
+  closeAllMenus();
+  sheetNote = notes.find(n=>n.id===id);
+  if (!sheetNote) return;
+  sheetDest = dest || 'sms';
+  const q = (sheetNote.content||'').replace(/[#*`>\[\]]/g,' ').trim();
+  document.getElementById('sheetQuote').textContent = q.slice(0,140);
+  if (!calendarPrefs) calendarPrefs = (await api('/api/calendar/prefs').catch(()=>[])).filter(p=>p.enabled);
+  renderDestRow();
+  document.getElementById('sendOverlay').classList.add('open');
+}
+function renderDestRow(){
+  document.getElementById('destRow').innerHTML = DESTS.map(d=>{
+    const v = CH[d];
+    return `<div class="dest-opt ${sheetDest===d?'sel':''}" style="--c:${v.c}" onclick="pickDest('${d}')">${svg(v.ic)}<div class="dn">${v.label}</div></div>`;
+  }).join('');
+  const f = document.getElementById('destField'), lbl = document.getElementById('fieldLabel');
+  const calWrap = document.getElementById('calFieldWrap');
+  calWrap.hidden = sheetDest !== 'cal';
+  if (sheetDest==='sms'){ lbl.textContent='To'; f.type='text'; f.value=''; f.placeholder='Phone (blank = your number)'; }
+  else if (sheetDest==='email'){ lbl.textContent='To'; f.type='text'; f.value=''; f.placeholder='Email (blank = your address)'; }
+  else {
+    lbl.textContent='When'; f.type='datetime-local';
+    const d = new Date(Date.now()+3600e3); d.setMinutes(0,0,0);
+    f.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:00`;
+    document.getElementById('calSelect').innerHTML = calendarPrefs.length
+      ? calendarPrefs.map(p=>`<option value="${esc(p.calendar_name)}">${esc(p.calendar_name)}</option>`).join('')
+      : '<option value="">No calendars enabled</option>';
   }
-  closeComposer();
-  loadTags();
+  document.getElementById('sendGo').textContent = sheetDest==='cal' ? 'Add →' : 'Send →';
 }
-
-function closeComposer() {
-  $('#composer-overlay').hidden = true;
-  state.editingNoteId = null;
-}
-
-// ── Voice ────────────────────────────────────────────────
-
-function setupVoice() {
-  if (document.body.dataset.voiceEnabled !== '1') return;
-  const btn = $('#voice-btn');
-  btn.hidden = false;
-  btn.onclick = () => $('#voice-file').click();
-  $('#voice-file').onchange = async () => {
-    const file = $('#voice-file').files[0];
-    if (!file) return;
-    btn.textContent = '…';
-    const form = new FormData();
-    form.append('audio', file);
-    const res = await fetch('/api/voice/transcribe', { method: 'POST', body: form });
-    const data = await res.json();
-    btn.textContent = '🎤';
-    if (data.transcript) {
-      $('#composer-content').value += (($('#composer-content').value ? '\n' : '') + data.transcript);
-      const existing = $('#composer-tags').value.split(',').map((s) => s.trim()).filter(Boolean);
-      $('#composer-tags').value = [...new Set([...existing, ...(data.tags || [])])].join(', ');
-    } else if (data.error) {
-      alert(data.error);
+function pickDest(d){ sheetDest=d; renderDestRow(); }
+function closeSheet(){ document.getElementById('sendOverlay').classList.remove('open'); }
+async function confirmSend(){
+  if (!sheetNote) return;
+  const f = document.getElementById('destField');
+  try {
+    if (sheetDest === 'cal') {
+      const calendar = document.getElementById('calSelect').value;
+      if (!calendar) { toast('Enable a calendar in settings first'); return; }
+      const start = new Date(f.value);
+      const end = new Date(start.getTime()+3600e3);
+      const iso = (d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:00`;
+      await api(`/api/notes/${sheetNote.id}/to-event`, { method:'POST',
+        body: JSON.stringify({ calendar_name:calendar, start_at:iso(start), end_at:iso(end), all_day:false }) });
+      toast(`${svg('cal',13)} Added to ${esc(calendar)}`);
+    } else {
+      await api(`/api/notes/${sheetNote.id}/send`, { method:'POST',
+        body: JSON.stringify({ channel: sheetDest, to: f.value.trim() }) });
+      toast(`${svg(CH[sheetDest].ic,13)} Sent via ${CH[sheetDest].label}`);
     }
-  };
+    closeSheet();
+  } catch (e) { toast(esc(e.message)); }
 }
 
-// ── Reminders ────────────────────────────────────────────
+/* ─── Card quick actions ───────────────────────────────────── */
+async function copyNote(id){
+  closeAllMenus();
+  const n = notes.find(x=>x.id===id);
+  if (navigator.clipboard && n) navigator.clipboard.writeText(n.content).catch(()=>{});
+  toast(`${svg('copy',13)} Copied to clipboard`);
+}
+async function togglePin(id){
+  closeAllMenus();
+  const n = notes.find(x=>x.id===id);
+  await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ pinned: !n.pinned }) });
+  toast(`${svg('pin',13)} ${!n.pinned?'Pinned to top':'Unpinned'}`);
+  loadNotes();
+}
+async function moveFeed(id){
+  closeAllMenus();
+  const n = notes.find(x=>x.id===id);
+  const to = n.feed === 'shared' ? 'private' : 'shared';
+  await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ feed: to }) });
+  toast(`${svg('reply',13)} Moved to ${to==='shared'?'Shared':'Mine'}`);
+  loadNotes(); refreshSharedBadge();
+}
+async function deleteNote(id){
+  closeAllMenus();
+  if (!confirm('Delete this note? The .md file goes too.')) return;
+  await api('/api/notes/'+id, { method:'DELETE' });
+  toast(`${svg('trash',13)} Deleted`);
+  loadNotes(); refreshSharedBadge();
+}
+async function toggleTodo(noteId, todoId){
+  const n = notes.find(x=>x.id===noteId);
+  const todos = n.todos.map(t => ({ text:t.text, checked: t.id===todoId ? !t.checked : t.checked }));
+  await api('/api/notes/'+noteId, { method:'PATCH', body: JSON.stringify({ todos }) });
+  loadNotes();
+}
 
-function showReminderBanner(rem) {
+/* ─── Tag management ───────────────────────────────────────── */
+let tagAddColor = PALETTE[0];
+function openTagAdd(){
+  tagAddColor = PALETTE[tags.length % PALETTE.length];
+  document.getElementById('tagAddName').value = '';
+  renderSwatches();
+  document.getElementById('tagAddOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('tagAddName').focus(),50);
+}
+function renderSwatches(){
+  document.getElementById('tagAddSwatches').innerHTML = PALETTE.map(c=>
+    `<div class="swatch ${tagAddColor===c?'sel':''}" style="background:${c}" onclick="tagAddColor='${c}';renderSwatches()"></div>`).join('');
+}
+function closeTagAdd(){ document.getElementById('tagAddOverlay').classList.remove('open'); }
+async function confirmTagAdd(){
+  const name = document.getElementById('tagAddName').value.trim();
+  if (!name) return;
+  await api('/api/tags', { method:'POST', body: JSON.stringify({ name, color: tagAddColor }) }).catch(e=>toast(esc(e.message)));
+  closeTagAdd();
+  await loadTags();
+  toast(`${svg('check',13)} Tag added`);
+}
+
+function openTagEdit(){
+  renderTagEditList();
+  document.getElementById('tagEditOverlay').classList.add('open');
+}
+function renderTagEditList(){
+  document.getElementById('tagEditList').innerHTML = tags.length ? tags.map(t=>
+    `<div class="tag-edit-row">
+      <div class="dot" style="background:${t.color}" title="Click to recolour" onclick="cycleTagColor(${t.id})"></div>
+      <input value="${esc(t.name)}" onchange="renameTag(${t.id}, this.value)">
+      <span class="tcount">${t.count} note${t.count===1?'':'s'}</span>
+      <button class="tdel" title="Delete tag" onclick="deleteTag(${t.id})">${svg('trash',12)}</button>
+    </div>`).join('') : '<div class="grid-empty">No tags yet.</div>';
+}
+function closeTagEdit(){ document.getElementById('tagEditOverlay').classList.remove('open'); loadNotes(); }
+async function cycleTagColor(id){
+  const t = tags.find(x=>x.id===id);
+  const next = PALETTE[(PALETTE.indexOf(t.color)+1+PALETTE.length) % PALETTE.length];
+  await api('/api/tags/'+id, { method:'PATCH', body: JSON.stringify({ color: next }) });
+  await loadTags(); renderTagEditList();
+}
+async function renameTag(id, name){
+  if (!name.trim()) return;
+  await api('/api/tags/'+id, { method:'PATCH', body: JSON.stringify({ name }) }).catch(e=>toast(esc(e.message)));
+  await loadTags(); renderTagEditList();
+}
+async function deleteTag(id){
+  await api('/api/tags/'+id, { method:'DELETE' });
+  await loadTags(); renderTagEditList();
+}
+
+/* ─── Settings: calendars ──────────────────────────────────── */
+function openSettings(){
+  document.getElementById('settingsOverlay').classList.add('open');
+  loadPrefs();
+}
+function closeSettings(){ document.getElementById('settingsOverlay').classList.remove('open'); }
+async function loadPrefs(){
+  const list = document.getElementById('prefList');
+  list.textContent = 'Looking for calendars…';
+  await api('/api/calendar/calendars').catch(()=>[]);  // triggers discovery
+  const prefs = await api('/api/calendar/prefs').catch(()=>[]);
+  calendarPrefs = null; // invalidate send-sheet cache
+  list.innerHTML = prefs.length ? prefs.map(p=>
+    `<div class="pref-row">
+      <input type="checkbox" ${p.enabled?'checked':''} onchange="setPref('${esc(p.calendar_name)}', this.checked, null)">
+      <span class="pname">${esc(p.calendar_name)}</span>
+      <select onchange="setPref('${esc(p.calendar_name)}', null, this.value)">
+        <option value="private" ${p.feed==='private'?'selected':''}>Private</option>
+        <option value="shared" ${p.feed==='shared'?'selected':''}>Shared</option>
+      </select>
+    </div>`).join('')
+    : '<div class="grid-empty">No calendars found — check CalDAV settings in .env on the Mac.</div>';
+}
+async function setPref(name, enabled, feed){
+  const body = { calendar_name: name };
+  if (enabled !== null) body.enabled = enabled;
+  if (feed !== null) body.feed = feed;
+  await api('/api/calendar/prefs', { method:'PATCH', body: JSON.stringify(body) });
+}
+async function syncNow(){
+  const el = document.getElementById('syncStatus');
+  el.textContent = 'Syncing…';
+  const res = await api('/api/calendar/sync', { method:'POST' }).catch(e=>({error:e.message}));
+  el.textContent = res.error ? 'Sync failed' : 'Synced just now';
+  loadNotes();
+}
+
+/* ─── Toast ────────────────────────────────────────────────── */
+let toastTimer;
+function toast(html){
+  const t = document.getElementById('toast');
+  t.innerHTML = html;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ─── Reminder banners ─────────────────────────────────────── */
+function showReminderBanner(rem){
   const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
-  if (dismissed.includes(rem.id)) return;
-  if (document.querySelector(`[data-reminder="${rem.id}"]`)) return;
+  if (dismissed.includes(rem.id) || document.querySelector(`[data-reminder="${rem.id}"]`)) return;
   const div = document.createElement('div');
   div.className = 'reminder-banner';
   div.dataset.reminder = rem.id;
-  div.innerHTML = `⏰ ${escapeHtml(rem.message)} <button>Dismiss</button>`;
-  div.querySelector('button').onclick = () => {
-    dismissed.push(rem.id);
-    sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
-    div.remove();
-  };
-  $('#reminder-banners').appendChild(div);
+  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> ${esc(rem.message)} <button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`;
+  document.getElementById('reminderBanners').appendChild(div);
+}
+function dismissReminder(id){
+  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
+  dismissed.push(id);
+  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
+  document.querySelector(`[data-reminder="${id}"]`)?.remove();
 }
 
-// ── SSE ──────────────────────────────────────────────────
+/* ─── Composer ─────────────────────────────────────────────── */
+let composerMode = 'note', composerFeed = 'private';
+const PLACEHOLDERS = {
+  note: "What's on your mind…\n\nWrite freely. #tags are pulled out automatically.",
+  todo: "Title on the first line…\nThen one task per line.\n\n#tags work here too.",
+};
 
-function setupSSE() {
+function openComposer(){
+  composerFeed = activeFeed;
+  setComposerFeed(composerFeed);
+  document.getElementById('composer').classList.add('open');
+  updateComposerTags();
+  setTimeout(()=>document.getElementById('composerText').focus(),50);
+}
+function closeComposer(){ document.getElementById('composer').classList.remove('open'); }
+function setComposerMode(m){
+  composerMode = m;
+  document.getElementById('tabNote').classList.toggle('active', m==='note');
+  document.getElementById('tabTodo').classList.toggle('active', m==='todo');
+  updateComposerTags();
+}
+function setComposerFeed(f){
+  composerFeed = f;
+  document.getElementById('cFeedPrivate').classList.toggle('active', f==='private');
+  document.getElementById('cFeedShared').classList.toggle('active', f==='shared');
+}
+
+/* pull #hashtags out of text; return {tags:[...], clean:textWithoutTags} */
+function extractTags(text){
+  const found = [];
+  const clean = text.replace(/(^|\s)#([\p{L}\p{N}_-]+)/gu, (m,pre,word)=>{
+    const name = word.toUpperCase();
+    if (!found.includes(name)) found.push(name);
+    return pre;
+  }).replace(/[ \t]{2,}/g,' ');
+  return { tags:found, clean };
+}
+
+function updateComposerTags(){
+  document.getElementById('composerText').placeholder = PLACEHOLDERS[composerMode];
+  const { tags:found } = extractTags(document.getElementById('composerText').value);
+  const row = document.getElementById('composerTags');
+  if (!found.length){ row.innerHTML = `<span class="ct-label">Add #tags as you type</span>`; return; }
+  row.innerHTML = `<span class="ct-label">Tags</span>` + found.map((t,i)=>{
+    const existing = tags.find(x=>x.name===t);
+    const color = existing ? existing.color : PALETTE[(tags.length+i) % PALETTE.length];
+    return `<span class="ct-pill ${existing?'':'ct-new'}" style="--tag-color:${color}">${esc(t)}${existing?'':' · new'}</span>`;
+  }).join('');
+}
+
+async function saveNote(){
+  const raw = document.getElementById('composerText').value.trim();
+  if (!raw){ closeComposer(); return; }
+  const { tags:found, clean } = extractTags(raw);
+  const body = { feed: composerFeed, tags: found, source: 'web' };
+
+  if (composerMode==='todo'){
+    const lines = clean.split('\n').map(l=>l.trim()).filter(Boolean);
+    body.type = 'todo';
+    body.content = lines.shift() || 'Untitled list';
+    body.todos = lines.map(l=>({ text:l, checked:false }));
+  } else {
+    body.type = 'note';
+    body.content = clean.trim();
+  }
+
+  try {
+    const note = await api('/api/notes', { method:'POST', body: JSON.stringify(body) });
+    if (document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
+      await api('/api/reminders', { method:'POST', body: JSON.stringify({
+        message: body.content.split('\n')[0].slice(0,120),
+        fire_at: document.getElementById('remindAt').value + ':00',
+        notify_web: true, notify_sms: true, note_id: note.id,
+      }) });
+    }
+    document.getElementById('composerText').value = '';
+    document.getElementById('remindOn').checked = false;
+    document.getElementById('remindAt').hidden = true;
+    document.getElementById('remindAt').value = '';
+    closeComposer();
+    toast(`${svg(composerMode==='todo'?'check':'app',13)} ${composerMode==='todo'?'List':'Note'} saved`);
+    loadTags(); loadNotes(); refreshSharedBadge();
+  } catch (e) { toast(esc(e.message)); }
+}
+
+/* ─── Theme ────────────────────────────────────────────────── */
+function setThemeIcon(){
+  const dark = document.documentElement.getAttribute('data-theme')==='dark';
+  document.getElementById('themeBtn').innerHTML = svg(dark?'sun':'moon',14);
+}
+function toggleTheme(){
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme')==='dark'?'light':'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('remndrs-theme', next);
+  setThemeIcon();
+}
+
+async function logout(){
+  await api('/api/auth/logout', { method:'POST' }).catch(()=>{});
+  window.location = '/login';
+}
+
+/* ─── SSE ──────────────────────────────────────────────────── */
+function startStream(){
   const evtSource = new EventSource('/api/stream');
   evtSource.onmessage = (e) => {
     const event = JSON.parse(e.data);
     if (event.type === 'heartbeat') return;
     if (event.type === 'reminder') { showReminderBanner(event.data); return; }
-    if (['note_created', 'note_updated', 'note_deleted',
-         'calendar_event_created', 'calendar_event_updated',
-         'calendar_event_orphaned'].includes(event.type)) {
-      loadNotes();
-      loadTags();
-    }
+    loadTags(); loadNotes(); refreshSharedBadge();
   };
 }
 
-// ── Tag management modals (prompt-based, minimal) ────────
-
-const PALETTE = ['#4ade80', '#f87171', '#60a5fa', '#fb923c', '#a78bfa',
-                 '#facc15', '#f472b6', '#2dd4bf', '#e5e7eb'];
-
-async function addTagFlow() {
-  const name = prompt('Tag name:');
-  if (!name) return;
-  const color = prompt('Color (hex), or leave blank for default:\n' + PALETTE.join(' ')) || undefined;
-  await api('/api/tags', { method: 'POST', body: JSON.stringify({ name, color }) });
-  loadTags();
-}
-
-async function editTagsFlow() {
-  const list = state.tags.map((t) => `${t.id}: #${t.name} (${t.color}, ${t.count} notes)`).join('\n');
-  const id = prompt('Tags:\n' + list + '\n\nEnter a tag id to edit, or "d<id>" to delete:');
-  if (!id) return;
-  if (id.startsWith('d')) {
-    await api('/api/tags/' + id.slice(1), { method: 'DELETE' });
-  } else {
-    const name = prompt('New name (blank to keep):') || undefined;
-    const color = prompt('New color hex (blank to keep):') || undefined;
-    await api('/api/tags/' + id, { method: 'PATCH', body: JSON.stringify({ name, color }) });
-  }
-  loadTags();
-  loadNotes();
-}
-
-// ── Settings (calendar prefs) ────────────────────────────
-
-async function openSettings() {
-  $('#settings-overlay').hidden = false;
-  const wrap = $('#calendar-prefs');
-  wrap.textContent = 'Loading calendars…';
-  await api('/api/calendar/calendars'); // triggers discovery
-  const prefs = await api('/api/calendar/prefs') || [];
-  wrap.innerHTML = prefs.length ? '' : 'No calendars found. Check CalDAV settings in .env.';
-  for (const p of prefs) {
-    const row = document.createElement('div');
-    row.className = 'cal-pref-row';
-    row.innerHTML = `<label><input type="checkbox" ${p.enabled ? 'checked' : ''}> ${escapeHtml(p.calendar_name)}</label>` +
-      `<select><option value="private" ${p.feed === 'private' ? 'selected' : ''}>Private</option>` +
-      `<option value="shared" ${p.feed === 'shared' ? 'selected' : ''}>Shared</option></select>`;
-    const update = () => api('/api/calendar/prefs', {
-      method: 'PATCH',
-      body: JSON.stringify({
-        calendar_name: p.calendar_name,
-        enabled: row.querySelector('input').checked,
-        feed: row.querySelector('select').value,
-      }),
-    });
-    row.querySelector('input').onchange = update;
-    row.querySelector('select').onchange = update;
-    wrap.appendChild(row);
-  }
-}
-
-// ── Wiring ───────────────────────────────────────────────
-
-$('#feed-my').onclick = () => {
-  state.feed = 'private';
-  $('#feed-my').classList.add('active');
-  $('#feed-shared').classList.remove('active');
-  loadNotes();
-};
-$('#feed-shared').onclick = () => {
-  state.feed = 'shared';
-  $('#feed-shared').classList.add('active');
-  $('#feed-my').classList.remove('active');
-  loadNotes();
-};
-$('#logout-btn').onclick = async () => {
-  await api('/api/auth/logout', { method: 'POST' });
-  window.location = '/login';
-};
-$('#new-note-btn').onclick = () => openComposer(null);
-$('#composer-cancel').onclick = closeComposer;
-$('#composer-save').onclick = saveComposer;
-$('#tab-note').onclick = () => setComposerTab('note');
-$('#tab-todo').onclick = () => setComposerTab('todo');
-$('#clear-filter-btn').onclick = () => setTagFilter(null);
-$('#add-tag-btn').onclick = addTagFlow;
-$('#edit-tags-btn').onclick = editTagsFlow;
-$('#settings-btn').onclick = openSettings;
-$('#settings-close').onclick = () => { $('#settings-overlay').hidden = true; };
-$('#sync-now-btn').onclick = async () => {
-  $('#sync-status').textContent = 'Syncing…';
-  const res = await api('/api/calendar/sync', { method: 'POST' });
-  $('#sync-status').textContent = res && res.success
-    ? 'Last synced ' + new Date().toLocaleTimeString() : 'Sync failed';
-  loadNotes();
-};
-
-let searchTimer;
-$('#search').addEventListener('input', (e) => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.search = e.target.value.trim();
-    if (state.search) setTagFilter(null);
-    else loadNotes();
-    if (state.search) loadNotes();
-  }, 250);
+/* ─── Keyboard ─────────────────────────────────────────────── */
+document.addEventListener('keydown', e=>{
+  if (e.key==='Escape'){ closeSheet(); closeShare(); closeComposer(); closeTagAdd(); closeTagEdit(); closeSettings(); closeAllMenus(); }
+  if ((e.metaKey||e.ctrlKey) && e.key==='Enter' && document.getElementById('composer').classList.contains('open')){ e.preventDefault(); saveNote(); }
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  if (e.key==='n' || e.key==='N'){ e.preventDefault(); openComposer(); }
+  if (e.key==='/'){ e.preventDefault(); document.getElementById('search').focus(); }
 });
 
-document.addEventListener('keydown', (e) => {
-  const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
-  if (e.key === 'Escape') {
-    closeComposer();
-    $('#settings-overlay').hidden = true;
-  }
-  if (inField) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !$('#composer-overlay').hidden) {
-      saveComposer();
-    }
-    return;
-  }
-  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openComposer(null); }
-  if (e.key === '/') { e.preventDefault(); $('#search').focus(); }
-});
-
-// ── Init ─────────────────────────────────────────────────
-
+/* ─── Init ─────────────────────────────────────────────────── */
+const savedTheme = localStorage.getItem('remndrs-theme');
+if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+renderChanRail();
+setThemeIcon();
 loadTags();
 loadNotes();
-setupSSE();
-setupVoice();
-api('/api/reminders/pending').then((rems) => (rems || []).forEach(showReminderBanner));
+loadPeople();
+refreshSharedBadge();
+startStream();
+api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});

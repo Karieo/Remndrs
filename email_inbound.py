@@ -19,6 +19,37 @@ def mailgun_configured():
     return bool(os.getenv('MAILGUN_SIGNING_KEY'))
 
 
+def mailgun_send_configured():
+    return bool(os.getenv('MAILGUN_API_KEY') and os.getenv('MAILGUN_INBOUND_ADDRESS'))
+
+
+def send_email(to_address, subject, text):
+    """Send an outbound email via the Mailgun messages API.
+
+    Uses the domain of MAILGUN_INBOUND_ADDRESS as the sending domain.
+    Returns True on success.
+    """
+    if not mailgun_send_configured():
+        return False
+    inbound = os.getenv('MAILGUN_INBOUND_ADDRESS', '')
+    domain = inbound.split('@', 1)[-1]
+    import requests
+    try:
+        resp = requests.post(
+            f'https://api.mailgun.net/v3/{domain}/messages',
+            auth=('api', os.getenv('MAILGUN_API_KEY')),
+            data={'from': f'Remndrs <{inbound}>',
+                  'to': to_address,
+                  'subject': subject,
+                  'text': text},
+            timeout=15)
+        resp.raise_for_status()
+        return True
+    except requests.RequestException:
+        log.exception('Outbound email send failed')
+        return False
+
+
 def verify_mailgun_signature(token, timestamp, signature):
     signing_key = os.getenv('MAILGUN_SIGNING_KEY', '')
     if not signing_key:

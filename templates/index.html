@@ -1,90 +1,147 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Remndrs</title>
-  <link rel="stylesheet" href="/static/css/app.css">
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remndrs — Feed</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
-<body data-user-id="{{ user.id }}" data-voice-enabled="{{ '1' if voice_enabled else '0' }}">
+<body data-user-id="{{ user.id }}" data-user-name="{{ user.name }}">
 
-  <div id="reminder-banners"></div>
+<div id="reminderBanners"></div>
 
-  <header>
-    <span class="wordmark">Remndrs</span>
-    <nav class="feed-toggle">
-      <button id="feed-my" class="active">My Feed</button>
-      <button id="feed-shared">Shared</button>
-    </nav>
-    <div class="header-right">
-      <button id="settings-btn" title="Settings">···</button>
-      <button id="logout-btn">Log out</button>
+<header class="header">
+  <div class="wordmark">Remnd<span>r</span>s</div>
+  <div class="header-right">
+    <div class="feed-toggle">
+      <button class="feed-btn active" id="feedMine" onclick="setFeed('private')">Mine</button>
+      <button class="feed-btn" id="feedShared" onclick="setFeed('shared')">Shared <span class="feed-badge" id="sharedBadge" hidden>0</span></button>
     </div>
-  </header>
-
-  <div class="toolbar">
-    <input type="search" id="search" placeholder="Search notes… (press /)">
-    <button id="new-note-btn" class="round-btn" title="New note (N)">+</button>
+    <button class="icon-btn" onclick="openSettings()" title="Calendars & settings" id="settingsBtn">⚙</button>
+    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" id="themeBtn"></button>
+    <button class="icon-btn" onclick="logout()" title="Log out">Log out</button>
   </div>
+</header>
 
-  <div class="tag-bar" id="tag-bar">
-    <button id="add-tag-btn">+ Add Tag</button>
-    <button id="edit-tags-btn"># Edit Tags</button>
-    <span id="tag-pills"></span>
-    <button id="clear-filter-btn" hidden>Clear</button>
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input class="search-input" type="text" placeholder="Search by text or date…" autocomplete="off" oninput="onSearchInput()" id="search">
   </div>
-  <div id="filter-label" class="filter-label" hidden></div>
+  <button class="btn-new" onclick="openComposer()" title="New note (N)">+</button>
+</div>
 
-  <main id="cards"></main>
+<div class="chan-rail" id="chanRail"></div>
 
-  <!-- Composer -->
-  <div id="composer-overlay" class="overlay" hidden>
-    <div class="composer">
-      <div class="composer-tabs">
-        <button id="tab-note" class="active">Note</button>
-        <button id="tab-todo">To-Do List</button>
+<div class="tag-bar" id="tagBar"></div>
+
+<main class="cards-grid" id="grid"></main>
+
+<!-- B4 · Send sheet -->
+<div class="overlay" id="sendOverlay" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet">
+    <div class="sheet-h">Send this note</div>
+    <div class="sheet-sub">Push it back out — anywhere</div>
+    <div class="sheet-quote" id="sheetQuote"></div>
+    <div class="dest-row" id="destRow"></div>
+    <div class="field" id="destFieldWrap"><span id="fieldLabel">To</span><input id="destField" type="text"></div>
+    <div class="field" id="calFieldWrap" hidden><span>Cal</span><select id="calSelect"></select></div>
+    <div class="sheet-foot">
+      <button class="sx" onclick="closeSheet()">Cancel</button>
+      <button class="sx go" id="sendGo" onclick="confirmSend()">Send →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share with a person -->
+<div class="overlay" id="shareOverlay" onclick="if(event.target===this)closeShare()">
+  <div class="sheet">
+    <div class="sheet-h">Share with…</div>
+    <div class="sheet-sub">Send this note to someone — they can reply back</div>
+    <div class="sheet-quote" id="shareQuote"></div>
+    <div class="people-grid" id="peopleGrid"></div>
+    <div class="field"><span>Note</span><input id="shareMsg" type="text" placeholder="Add a message (optional)…"></div>
+    <div class="sheet-foot">
+      <button class="sx" onclick="closeShare()">Cancel</button>
+      <button class="sx go" onclick="confirmShare()">Share →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add tag -->
+<div class="overlay" id="tagAddOverlay" onclick="if(event.target===this)closeTagAdd()">
+  <div class="sheet">
+    <div class="sheet-h">New tag</div>
+    <div class="sheet-sub">Pick a colour — it drives the card accent</div>
+    <div class="field"><span>Tag</span><input id="tagAddName" type="text" placeholder="name"></div>
+    <div class="swatch-row" id="tagAddSwatches"></div>
+    <div class="sheet-foot">
+      <button class="sx" onclick="closeTagAdd()">Cancel</button>
+      <button class="sx go" onclick="confirmTagAdd()">Add →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit tags -->
+<div class="overlay" id="tagEditOverlay" onclick="if(event.target===this)closeTagEdit()">
+  <div class="sheet">
+    <div class="sheet-h">Edit tags</div>
+    <div class="sheet-sub">Rename, recolour, or delete — notes keep their text</div>
+    <div class="tag-edit-list" id="tagEditList"></div>
+    <div class="sheet-foot">
+      <button class="sx go" onclick="closeTagEdit()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings: calendars -->
+<div class="overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
+  <div class="sheet">
+    <div class="sheet-h">Calendars</div>
+    <div class="sheet-sub">Enable iCloud calendars and pick their feed</div>
+    <div class="pref-list" id="prefList">Loading…</div>
+    <div class="sheet-foot">
+      <span class="sheet-sub" id="syncStatus" style="margin:8px auto 0 0;"></span>
+      <button class="sx" onclick="syncNow()">Sync now</button>
+      <button class="sx go" onclick="closeSettings()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Composer -->
+<div class="composer-overlay" id="composer" onclick="if(event.target===this)closeComposer()">
+  <div class="composer">
+    <div class="composer-tabs">
+      <button class="composer-tab active" id="tabNote" onclick="setComposerMode('note')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Note</button>
+      <button class="composer-tab" id="tabTodo" onclick="setComposerMode('todo')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> To-Do</button>
+      <div class="feed-toggle composer-feed">
+        <button class="feed-btn active" id="cFeedPrivate" onclick="setComposerFeed('private')">Private</button>
+        <button class="feed-btn" id="cFeedShared" onclick="setComposerFeed('shared')">Shared</button>
       </div>
-      <textarea id="composer-content" placeholder="Write a note… markdown supported"></textarea>
-      <div id="todo-editor" hidden>
-        <input type="text" id="todo-title" placeholder="Title">
-        <ul id="todo-items"></ul>
-      </div>
-      <div class="composer-row">
-        <input type="text" id="composer-tags" placeholder="#tags, comma separated">
-        <span class="feed-switch">
-          <label><input type="radio" name="cfeed" value="private" checked> Private</label>
-          <label><input type="radio" name="cfeed" value="shared"> Shared</label>
-        </span>
-        <button id="voice-btn" hidden title="Record / upload audio">🎤</button>
-        <input type="file" id="voice-file" accept="audio/*" hidden>
-      </div>
-      <details class="reminder-section">
-        <summary>Add reminder</summary>
-        <input type="datetime-local" id="reminder-at">
-        <label><input type="checkbox" id="reminder-web" checked> Web</label>
-        <label><input type="checkbox" id="reminder-sms" checked> SMS</label>
-      </details>
+    </div>
+    <textarea class="composer-textarea" id="composerText" oninput="updateComposerTags()"></textarea>
+    <div class="composer-tagrow" id="composerTags"></div>
+    <div class="composer-remind">
+      <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked"> ⏰ remind me</label>
+      <input type="datetime-local" id="remindAt" hidden>
+    </div>
+    <div class="composer-footer">
+      <span class="composer-hint">⌘↵ save · esc close</span>
       <div class="composer-actions">
-        <button id="composer-cancel">Cancel</button>
-        <button id="composer-save" class="primary">Save</button>
+        <button class="sx" onclick="closeComposer()">Close</button>
+        <button class="sx go" onclick="saveNote()">Save</button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Settings panel -->
-  <div id="settings-overlay" class="overlay" hidden>
-    <div class="composer">
-      <h3>Calendars</h3>
-      <div id="calendar-prefs"></div>
-      <div class="composer-actions">
-        <span id="sync-status" class="muted"></span>
-        <button id="sync-now-btn">Sync now</button>
-        <button id="settings-close">Close</button>
-      </div>
-    </div>
-  </div>
+<div class="toast" id="toast"></div>
 
-  <script src="/static/js/app.js"></script>
+<script src="/static/js/app.js"></script>
 </body>
 </html>
