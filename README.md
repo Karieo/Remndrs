@@ -339,9 +339,17 @@ marker comment and preserve everything you write below it.
 
 ## Integrations setup
 
-Each of these is optional and independent. Add the credentials to `.env`,
-restart (`launchctl kickstart -k gui/$(id -u)/com.remndrs` or just re-run
-`./setup.sh`), and the feature switches on.
+Each of these is optional and independent. **Configure everything in the app**:
+open ⚙ → **Integrations**, paste the credentials, hit **Save** then **Test** —
+changes apply immediately, no restart, no file editing. (They're stored in the
+app's `.env`, so editing that file by hand still works too.)
+
+The ⚙ → **Webhooks** tab shows the exact URLs to paste into the Twilio and
+Mailgun consoles once you've saved your public tunnel URL. The ⚙ → **People**
+tab is where you set your own routing (your mobile number, your Remndrs
+Twilio number, your inbound email address).
+
+What each provider needs:
 
 ### Twilio (SMS + Voice)
 
@@ -349,28 +357,22 @@ restart (`launchctl kickstart -k gui/$(id -u)/com.remndrs` or just re-run
 2. Verify your phone number during signup
 3. From the Console Dashboard, note your **Account SID** and **Auth Token**
 4. Go to Phone Numbers → Manage → Buy a Number (~$1.15/month)
-5. Under the number's settings:
-   - "A Message Comes In" → Webhook (HTTP POST): `https://your-tunnel-url/webhooks/sms`
-   - "A Call Comes In" → Webhook: `https://your-tunnel-url/webhooks/voice/answer`
-6. Add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `OWNER_PHONE_NUMBER` to `.env`
-7. Set the Twilio number on your user row (`twilio_number` in the users
-   table) so inbound texts route to you:
-
-   ```bash
-   cd ~/remndrs && ./venv/bin/python -c "
-   import database as db
-   u = db.get_user_by_login('Clay')
-   with db.connect() as c:
-       c.execute('UPDATE users SET twilio_number=? WHERE id=?', ('+15551234567', u['id']))"
-   ```
+5. Under the number's settings, paste the URLs from ⚙ → Webhooks:
+   - "A Message Comes In" → Webhook (HTTP POST): the **SMS** URL
+   - "A Call Comes In" → Webhook: the **Call answer** URL
+6. In ⚙ → Integrations → Texts & calls: paste the **Account SID**, **Auth
+   token**, and your mobile number → Save → Test
+7. In ⚙ → People: set **Remndrs #** to the Twilio number you bought, so
+   inbound texts route to you
 
 All webhooks verify Twilio's signature — unsigned requests are rejected.
 
 ### OpenAI (Voice transcription)
 
-Add `OPENAI_API_KEY` to `.env`. This enables transcription of phone-call
-recordings and the iPhone app's voice capture. Audio is limited to 25MB
-(Whisper's limit — roughly 45+ minutes at phone quality).
+Paste an API key in ⚙ → Integrations → Voice transcription. This enables
+transcription of phone-call recordings and the iPhone app's voice capture.
+Audio is limited to 25MB (Whisper's limit — roughly 45+ minutes at phone
+quality).
 
 ### Mailgun (Email inbound)
 
@@ -382,14 +384,14 @@ Requires a custom domain (Mailgun's sandbox domain works for testing only).
 3. Under Receiving → Create Route:
    - Filter: `match_recipient("notes@yourdomain.com")`
    - Action: `forward("https://your-tunnel-url/webhooks/email")` and `store()`
-4. Add `MAILGUN_API_KEY` and `MAILGUN_SIGNING_KEY` (HTTP webhook signing key)
-   to `.env`, and set `MAILGUN_INBOUND_ADDRESS` to the address from step 3
-5. Inbound mail is routed by **recipient address** — set each user's
-   `users.email` to the address their notes are sent to (same one-liner
-   pattern as the Twilio number above, with the `email` column)
+   (the forward URL is the **Email** one from ⚙ → Webhooks)
+4. In ⚙ → Integrations → Email: paste the **API key**, **webhook signing
+   key**, and the inbound address from step 3 → Save → Test
+5. Inbound mail is routed by **recipient address** — set your **Email** in
+   ⚙ → People to the address your notes are sent to
 
-`MAILGUN_API_KEY` + `MAILGUN_INBOUND_ADDRESS` also enable **outbound** email:
-the "Send via Email" action and reminder confirmation replies.
+The API key + inbound address also enable **outbound** email: the "Send via
+Email" action and reminder confirmation replies.
 
 ### iCloud Calendar (CalDAV)
 
@@ -399,28 +401,20 @@ password:
 1. Go to [appleid.apple.com](https://appleid.apple.com)
 2. Sign in → Security → App-Specific Passwords → Generate
 3. Label it "Remndrs"
-4. Copy the generated password into `.env` as `CALDAV_PASSWORD`
-5. Set `CALDAV_USERNAME` to your Apple ID email address
-6. `CALDAV_URL` is always `https://caldav.icloud.com` — never change this
+4. In ⚙ → Integrations → iCloud Calendar: enter your Apple ID email and the
+   generated password → Save → Test (it should report your calendars)
 
-Then open the ⚙ settings panel in the app, enable the calendars you want,
-and choose Private or Shared for each. Sync runs every 10 minutes (or use
-"Sync now").
+Then in ⚙ → Calendars, enable the ones you want and choose Private or Shared
+for each. Sync runs every 10 minutes (or use "Sync now").
 
 ---
 
 ## Adding a second user
 
-There's deliberately no admin UI. Create the account from the app directory:
+⚙ → **People** → "Add a person": name, password, optional email. Done.
 
-```bash
-cd ~/remndrs && ./venv/bin/python -c "
-import bcrypt, database as db
-db.create_user('Mia', bcrypt.hashpw(b'her-password', bcrypt.gensalt()).decode(),
-               email='mia@example.com')"
-```
-
-They log in with that name/password (web and iPhone app). Once a second user
+They log in with that name/password (web and iPhone app) and set their own
+mobile number / inbound email under their own ⚙ → People. Once a second user
 exists:
 
 - the **Share with…** picker finds them automatically,

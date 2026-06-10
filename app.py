@@ -253,10 +253,171 @@ def api_delete_note(note_id):
     return jsonify({'success': True})
 
 
+# ── Settings (owner-configurable integrations) ───────────
+
+# Keys editable from the settings panel. True = secret (never echoed back).
+SETTINGS_KEYS = {
+    'TWILIO_ACCOUNT_SID': False,
+    'TWILIO_AUTH_TOKEN': True,
+    'OWNER_PHONE_NUMBER': False,
+    'OPENAI_API_KEY': True,
+    'MAILGUN_API_KEY': True,
+    'MAILGUN_SIGNING_KEY': True,
+    'MAILGUN_INBOUND_ADDRESS': False,
+    'CALDAV_USERNAME': False,
+    'CALDAV_PASSWORD': True,
+    'PUBLIC_URL': False,
+}
+
+ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+
+def _write_env(updates):
+    """Persist key=value pairs into .env (replace or append) and apply live."""
+    lines = []
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH) as f:
+            lines = f.read().splitlines()
+    for key, value in updates.items():
+        os.environ[key] = value
+        replaced = False
+        for i, line in enumerate(lines):
+            if line.startswith(f'{key}='):
+                lines[i] = f'{key}={value}'
+                replaced = True
+                break
+        if not replaced:
+            lines.append(f'{key}={value}')
+    with open(ENV_PATH, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+
+
+def _require_owner():
+    user = current_user()
+    return user if user and user['role'] == 'owner' else None
+
+
+@app.route('/api/settings')
+def api_get_settings():
+    if not _require_owner():
+        return jsonify({'error': 'Owner only'}), 403
+    values = {}
+    for key, secret in SETTINGS_KEYS.items():
+        value = os.getenv(key, '')
+        values[key] = {'set': bool(value), 'value': '' if secret else value}
+    values['status'] = {
+        'sms': sms.twilio_configured(),
+        'voice_transcription': voice.openai_configured(),
+        'email_in': email_inbound.mailgun_configured(),
+        'email_out': email_inbound.mailgun_send_configured(),
+        'calendar': bool(os.getenv('CALDAV_USERNAME') and os.getenv('CALDAV_PASSWORD')),
+    }
+    return jsonify(values)
+
+
+@app.route('/api/settings', methods=['PATCH'])
+def api_update_settings():
+    if not _require_owner():
+        return jsonify({'error': 'Owner only'}), 403
+    data = request.get_json(silent=True) or {}
+    updates = {k: str(v).strip() for k, v in data.items()
+               if k in SETTINGS_KEYS and str(v).strip() != ''}
+    if updates:
+        _write_env(updates)
+        log.info('Settings updated: %s', ', '.join(updates))
+    return jsonify({'success': True, 'updated': sorted(updates)})
+
+
+@app.route('/api/settings/test/<service>', methods=['POST'])
+def api_test_settings(service):
+    """Live connection test for each integration."""
+    if not _require_owner():
+        return jsonify({'error': 'Owner only'}), 403
+    try:
+        if service == 'twilio':
+            if not sms.twilio_configured():
+                return jsonify({'ok': False, 'detail': 'SID and auth token required'})
+            from twilio.rest import Client
+            account = Client(os.getenv('TWILIO_ACCOUNT_SID'),
+                             os.getenv('TWILIO_AUTH_TOKEN')) \
+                .api.accounts(os.getenv('TWILIO_ACCOUNT_SID')).fetch()
+            return jsonify({'ok': True, 'detail': f'Connected: {account.friendly_name}'})
+
+        if service == 'openai':
+            if not voice.openai_configured():
+                return jsonify({'ok': False, 'detail': 'API key required'})
+            import openai
+            openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY')).models.retrieve('whisper-1')
+            return jsonify({'ok': True, 'detail': 'Key valid — Whisper available'})
+
+        if service == 'mailgun':
+            if not os.getenv('MAILGUN_API_KEY') or not os.getenv('MAILGUN_INBOUND_ADDRESS'):
+                return jsonify({'ok': False, 'detail': 'API key and inbound address required'})
+            domain = os.getenv('MAILGUN_INBOUND_ADDRESS').split('@', 1)[-1]
+            resp = http.get(f'https://api.mailgun.net/v3/domains/{domain}',
+                            auth=('api', os.getenv('MAILGUN_API_KEY')), timeout=15)
+            if resp.status_code == 200:
+                state = resp.json().get('domain', {}).get('state', 'unknown')
+                return jsonify({'ok': True, 'detail': f'Domain {domain}: {state}'})
+            return jsonify({'ok': False, 'detail': f'Mailgun says {resp.status_code} for {domain}'})
+
+        if service == 'caldav':
+            import calendar_sync
+            calendars = calendar_sync.discover_calendars(session['user_id'])
+            if calendars:
+                return jsonify({'ok': True,
+                                'detail': f'Found {len(calendars)} calendar(s)'})
+            return jsonify({'ok': False,
+                            'detail': 'Connected but no calendars — check the app-specific password'})
+
+        return jsonify({'error': 'Unknown service'}), 400
+    except Exception as e:
+        return jsonify({'ok': False, 'detail': str(e)[:200]})
+
+
+# ── Users ────────────────────────────────────────────────
+
 @app.route('/api/users')
 def api_list_users():
     """Other people in the system — for the share-with picker."""
     return jsonify([{'id': u['id'], 'name': u['name']} for u in db.list_users()])
+
+
+@app.route('/api/users/me')
+def api_get_me():
+    user = current_user()
+    return jsonify({k: user.get(k) for k in
+                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number')})
+
+
+@app.route('/api/users/me', methods=['PATCH'])
+def api_update_me():
+    data = request.get_json(silent=True) or {}
+    user = db.update_user_contact(session['user_id'],
+                                  email=data.get('email'),
+                                  phone_number=data.get('phone_number'),
+                                  twilio_number=data.get('twilio_number'))
+    return jsonify({k: user.get(k) for k in
+                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number')})
+
+
+@app.route('/api/users', methods=['POST'])
+def api_create_user():
+    """Add a person (owner only) — replaces the old python one-liner."""
+    if not _require_owner():
+        return jsonify({'error': 'Owner only'}), 403
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    password = data.get('password') or ''
+    if not name or not password:
+        return jsonify({'error': 'name and password are required'}), 400
+    if db.get_user_by_login(name):
+        return jsonify({'error': 'That name is taken'}), 400
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    user = db.create_user(name, password_hash,
+                          email=(data.get('email') or '').strip() or None,
+                          phone_number=(data.get('phone_number') or '').strip() or None)
+    return jsonify({'id': user['id'], 'name': user['name']}), 201
 
 
 @app.route('/api/notes/<note_id>/share', methods=['POST'])

@@ -99,15 +99,13 @@
   </div>
 </div>
 
-<!-- Settings: calendars -->
+<!-- Settings -->
 <div class="overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
-  <div class="sheet">
-    <div class="sheet-h">Calendars</div>
-    <div class="sheet-sub">Enable iCloud calendars and pick their feed</div>
-    <div class="pref-list" id="prefList">Loading…</div>
+  <div class="sheet sheet-wide">
+    <div class="sheet-h">Settings</div>
+    <div class="settings-nav" id="settingsNav"></div>
+    <div id="settingsBody">Loading…</div>
     <div class="sheet-foot">
-      <span class="sheet-sub" id="syncStatus" style="margin:8px auto 0 0;"></span>
-      <button class="sx" onclick="syncNow()">Sync now</button>
       <button class="sx go" onclick="closeSettings()">Done</button>
     </div>
   </div>

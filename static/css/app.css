@@ -289,6 +289,28 @@ button { font-family:inherit; }
 .tag-edit-row .tdel:hover { color:#f87171; }
 .tag-edit-list { margin-bottom:15px; max-height:300px; overflow-y:auto; }
 
+/* Settings */
+.sheet-wide { max-width:480px; }
+.settings-nav { display:flex; gap:4px; margin:10px 0 14px; flex-wrap:wrap; }
+.settings-nav button { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:20px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; padding:5px 12px; cursor:pointer; transition:all .15s; }
+.settings-nav button.active { color:var(--accent); border-color:var(--accent); background:color-mix(in srgb,var(--accent) 13%,var(--surface)); }
+.set-section { margin-bottom:16px; }
+.set-h { font-family:'Playfair Display',serif; font-size:14px; font-weight:600; margin-bottom:2px; display:flex; align-items:center; gap:8px; }
+.set-status { width:7px; height:7px; border-radius:50%; background:var(--text-faint); }
+.set-status.on { background:#4ade80; }
+.set-sub { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--text-muted); letter-spacing:0.3px; margin-bottom:9px; }
+.set-sub a { color:var(--accent); }
+.set-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.set-row .field { flex:1; margin-bottom:0; }
+.set-test { display:flex; align-items:center; gap:8px; margin-top:2px; }
+.set-test-result { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
+.set-test-result.ok { color:#4ade80; }
+.set-test-result.bad { color:#f87171; }
+.webhook-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.webhook-row .wlabel { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; width:92px; flex-shrink:0; }
+.webhook-row code { flex:1; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text); background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:6px 8px; overflow-x:auto; white-space:nowrap; }
+.set-divider { height:1px; background:var(--border); margin:14px 0; }
+
 /* Settings (calendar prefs) */
 .pref-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px; }
 .pref-row:last-child { border-bottom:none; }
