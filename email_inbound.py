@@ -100,6 +100,32 @@ def _reminder_request(subject, body):
     return None
 
 
+_TAG_LINE = re.compile(r'^\s*tags?\s*:\s*(.+?)\s*$', re.IGNORECASE)
+_HASHTAG_ONLY_LINE = re.compile(r'^\s*(#[A-Za-z0-9_]+[\s,]*)+\s*$')
+
+
+def _extract_tag_lines(body):
+    """Pull tag declarations out of the email body.
+
+    Two forms, each consumed (removed from the note content):
+      Tags: groceries, costco        — a dedicated tags line
+      #groceries #costco             — a line consisting only of hashtags
+    Returns (cleaned_body, tags).
+    """
+    tags, kept = [], []
+    for line in (body or '').split('\n'):
+        m = _TAG_LINE.match(line)
+        if m:
+            tags += [t.strip().lstrip('#').upper().replace(' ', '_')
+                     for t in re.split(r'[,;]', m.group(1)) if t.strip()]
+            continue
+        if _HASHTAG_ONLY_LINE.match(line):
+            tags += [t.upper() for t in re.findall(r'#([A-Za-z0-9_]+)', line)]
+            continue
+        kept.append(line)
+    return '\n'.join(kept).strip(), tags
+
+
 def _extract_tags(subject, body):
     tags = ['EMAIL']
     tags += [t.upper() for t in re.findall(r'#([A-Za-z0-9_]+)', f'{subject}\n{body}')]
@@ -126,9 +152,12 @@ def process_inbound(form, file_storage_items):
     if not body:
         body = strip_html(form.get('body-html') or '')
 
+    body, declared_tags = _extract_tag_lines(body)
     content = f'**{subject}**\n\n{body}' if subject else body
-    feed = 'shared' if '[shared]' in subject.lower() else 'private'
     tags = _extract_tags(subject, body)
+    tags += [t for t in declared_tags if t not in tags]
+    # [shared] in the subject or a declared SHARED tag routes to the shared feed
+    feed = 'shared' if ('[shared]' in subject.lower() or 'SHARED' in tags) else 'private'
     if feed == 'shared' and 'SHARED' not in tags:
         tags.append('SHARED')
 

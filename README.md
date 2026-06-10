@@ -92,6 +92,14 @@ Subject becomes the bolded first line. `[shared]` in the subject routes to
 the shared feed. `#HASHTAGS` and `[BRACKETED]` subject prefixes become tags.
 Attachments are saved to iCloud and linked from the note.
 
+**Tagging from the email body** — three ways:
+
+- `Tags: groceries, costco` on its own line (the line is removed from the note)
+- A line of just hashtags: `#ideas #reading` (also removed)
+- Inline `#hashtags` anywhere in the text (tagged, text kept as-is)
+
+`Tags: shared` (or `#SHARED`) routes the note to the shared feed, same as SMS.
+
 **Email reminders:** forward any email and put a remind phrase with a time
 in the subject — or as the first line you type above the forwarded content:
 
