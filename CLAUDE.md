@@ -30,7 +30,7 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 
 - `database.py` — schema (created idempotently on import via `init_db()`) and every query function. Opens a fresh connection per call, so it's safe from APScheduler threads. Full-text search works through `notes_fts` + triggers; note content only, not todo items.
 - `files.py` — mirrors notes to `.md` files with YAML frontmatter. Private notes go to `{NOTES_FOLDER}/{UserName}/`, shared to `{NOTES_FOLDER}/Shared/`, calendar event stubs to `{UserName}/Calendar/`. Falls back to `~/Documents/Remndrs` when the iCloud path's parent doesn't exist.
-- `sse.py` — per-user `queue.Queue` of events. `push_note_event()` fans shared-feed notes out to all users. `/api/stream` in app.py drains the queue with a 30s heartbeat.
+- `sse.py` — per-connection `queue.Queue` subscriptions (`subscribe`/`unsubscribe`), so every open tab/device gets every event. `push_note_event()` fans shared-feed notes out to all users. `/api/stream` in app.py drains a subscription with a 30s heartbeat; it accepts bearer tokens, which is how the iOS app (`ios/Remndrs/SSEClient.swift`) connects.
 - `reminders.py` — APScheduler `BackgroundScheduler`: reminder dispatch every 60s, calendar sync every 10min. Started only under `if __name__ == '__main__'` in app.py.
 - `sms.py` — Twilio webhook command parser (`GET`/`FIND`/`LIST`/`REMIND ME`/free text), reply sending, MMS download. `REMIND ME` time parsing uses `dateparser.search.search_dates`.
 - `voice.py`, `email_inbound.py`, `attachments.py`, `calendar_sync.py` — one module per inbound channel/integration.

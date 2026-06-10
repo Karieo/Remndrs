@@ -64,5 +64,6 @@ RemndrsShare/         share extension (URL / text / image → note)
   Sync runs on app open, via background refresh, and from Settings.
 - No offline queue: saving a note with no connectivity shows an error and
   keeps your text in the composer.
-- Reply threads refresh on pull/app-open (no SSE on iOS yet); the web UI
-  updates live.
+- While the app is open it holds an SSE connection to `/api/stream`, so new
+  notes and replies appear live (`SSEClient.swift`). In the background it
+  falls back to BGAppRefreshTask reminder sync only.

@@ -5,6 +5,7 @@ import BackgroundTasks
 struct RemndrsApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var session = SessionModel()
+    @StateObject private var sseClient = SSEClient()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -25,8 +26,10 @@ struct RemndrsApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                sseClient.start()
                 Task { await ReminderSyncer.sync() }
             } else if phase == .background {
+                sseClient.stop()
                 ReminderSyncer.scheduleBackgroundRefresh()
             }
         }

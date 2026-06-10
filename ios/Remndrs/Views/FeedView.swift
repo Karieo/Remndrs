@@ -120,6 +120,12 @@ struct FeedView: View {
         .onChange(of: model.feed) { Task { await model.load(api: session.api) } }
         .onChange(of: model.channel) { Task { await model.load(api: session.api) } }
         .onChange(of: model.search) { model.debouncedReload(api: session.api) }
+        .onReceive(NotificationCenter.default.publisher(for: .remndrsServerEvent)) { _ in
+            Task {
+                await model.load(api: session.api)
+                await refreshSharedCount()
+            }
+        }
         .sheet(item: $sendTarget) { note in
             SendSheetView(note: note)
                 .presentationDetents([.height(420)])
