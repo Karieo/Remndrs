@@ -9,17 +9,33 @@ Every note is a real `.md` file stored in iCloud Drive. The app is a view over
 those files. If the app disappeared tomorrow, every note would still be
 readable in Finder, Obsidian, or any text editor.
 
-## Quick Start
+## Install on your Mac
+
+**One-liner** (Terminal):
 
 ```bash
-cd ~/remndrs
-./setup.sh        # installs deps, generates keys, installs launchd auto-start
-python3 app.py
+curl -fsSL https://raw.githubusercontent.com/Karieo/Remndrs/main/install.sh | bash
 ```
 
-Open http://localhost:3000 and log in with the owner account from `.env`
-(`OWNER_NAME` / `OWNER_PASSWORD` — change the password placeholder before
-first run).
+That clones the app into `~/remndrs`, sets up an isolated Python environment,
+generates secrets, asks you to pick your name and password, installs
+auto-start on login, starts the app, and opens it in your browser.
+
+**Prefer Finder?** Download the repo, double-click `Install Remndrs.command`.
+
+**Already cloned it?**
+
+```bash
+cd ~/remndrs && ./setup.sh
+```
+
+`setup.sh` is safe to re-run any time — it updates dependencies and keeps your
+`.env`, database, and notes. The only prerequisite is Apple's Command Line
+Tools (macOS offers to install them automatically the first time `git` or
+`python3` runs).
+
+To stop the app and remove auto-start: `./uninstall.sh` (add `--purge` to also
+wipe the database and config — your notes in iCloud are never touched).
 
 The app always starts, even with no integrations configured. Twilio, OpenAI,
 Mailgun, and CalDAV features each enable themselves only when their
