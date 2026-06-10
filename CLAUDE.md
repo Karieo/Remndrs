@@ -9,9 +9,11 @@ Remndrs is a local-first personal notes/reminders app that runs on the user's Ma
 ## Commands
 
 ```bash
-pip install -r requirements.txt   # deps (or ./setup.sh for full Mac install)
+pip install -r requirements.txt   # deps (or ./setup.sh for the full Mac install: venv, secrets, launchd)
 python3 app.py                    # run — http://localhost:3000 (falls back to 3001/3002)
 ```
+
+On a Mac, `setup.sh` installs into `./venv` and points launchd at `venv/bin/python`; `install.sh` is the curl-able bootstrap and `uninstall.sh` reverses it (notes are never deleted).
 
 There is no test suite or linter configured. To smoke-test, run the app with throwaway env and hit the API:
 
