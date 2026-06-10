@@ -113,6 +113,7 @@ button { font-family:inherit; }
   box-shadow:var(--shadow); transition:box-shadow .15s,transform .1s,border-color .15s;
 }
 .card:hover { box-shadow:var(--shadow-hover); transform:translateY(-1px); }
+.card.editable { cursor:pointer; }
 .card.pinned { background:var(--pinned-bg); border-left-color:var(--pinned-border); }
 
 .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px; }
