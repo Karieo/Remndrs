@@ -1,0 +1,78 @@
+name: Remndrs
+options:
+  bundleIdPrefix: com.remndrs
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    # Set your team in Xcode (Signing & Capabilities) after running `xcodegen`,
+    # or put your Team ID here and regenerate.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  Remndrs:
+    type: application
+    platform: iOS
+    sources:
+      - Remndrs
+      - Shared
+    dependencies:
+      - target: RemndrsShare
+        embed: true
+    entitlements:
+      path: Remndrs/Remndrs.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.remndrs.app
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.remndrs.shared
+    info:
+      path: Remndrs/Info.plist
+      properties:
+        CFBundleDisplayName: Remndrs
+        UILaunchScreen: {}
+        UIAppFonts:
+          - PlayfairDisplay.ttf
+          - Lora.ttf
+          - Lora-Italic.ttf
+          - IBMPlexMono-Regular.ttf
+          - IBMPlexMono-Medium.ttf
+          - IBMPlexMono-SemiBold.ttf
+        NSMicrophoneUsageDescription: Record voice memos to transcribe into notes.
+        NSCameraUsageDescription: Take a photo to attach to a note.
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.remndrs.refresh
+        UIBackgroundModes:
+          - fetch
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+
+  RemndrsShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - RemndrsShare
+      - Shared
+    entitlements:
+      path: RemndrsShare/RemndrsShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.remndrs.app
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.remndrs.shared
+    info:
+      path: RemndrsShare/Info.plist
+      properties:
+        CFBundleDisplayName: Remndrs
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsImageWithMaxCount: 4

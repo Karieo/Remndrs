@@ -253,6 +253,40 @@ def api_delete_note(note_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/notes/<note_id>/send', methods=['POST'])
+def api_send_note(note_id):
+    """Push a note back out via SMS or email ("send anywhere")."""
+    note = db.get_note(note_id)
+    if not _can_see(note, session['user_id']):
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json(silent=True) or {}
+    channel = data.get('channel')
+    to = (data.get('to') or '').strip()
+    user = current_user()
+
+    if channel == 'sms':
+        if not sms.twilio_configured():
+            return jsonify({'error': 'SMS is not configured'}), 503
+        to = to or user.get('phone_number')
+        if not to:
+            return jsonify({'error': 'No destination number'}), 400
+        sms.send_sms(user, to, note['content'])
+        return jsonify({'success': True})
+
+    if channel == 'email':
+        if not email_inbound.mailgun_send_configured():
+            return jsonify({'error': 'Email sending is not configured'}), 503
+        to = to or user.get('email')
+        if not to:
+            return jsonify({'error': 'No destination address'}), 400
+        first_line = (note['content'] or '').strip().split('\n')[0][:80] or 'Note'
+        if email_inbound.send_email(to, f'Remndrs: {first_line}', note['content']):
+            return jsonify({'success': True})
+        return jsonify({'error': 'Email send failed'}), 502
+
+    return jsonify({'error': 'channel must be sms or email'}), 400
+
+
 # ── Tags ─────────────────────────────────────────────────
 
 @app.route('/api/tags')

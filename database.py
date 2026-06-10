@@ -393,6 +393,9 @@ def note_to_dict(row):
         atts = conn.execute(
             'SELECT id, original_filename, saved_filename, mime_type, size_bytes '
             'FROM attachments WHERE note_id = ? ORDER BY created_at', (note['id'],)).fetchall()
+        owner = conn.execute('SELECT name FROM users WHERE id = ?',
+                             (note['user_id'],)).fetchone()
+    note['user_name'] = owner['name'] if owner else None
     note['todos'] = [{**dict(t), 'checked': bool(t['checked'])} for t in todos]
     note['attachments'] = [dict(a) for a in atts]
     return note

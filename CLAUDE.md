@@ -47,3 +47,7 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 ## Frontend Note
 
 The current `templates/` + `static/` UI is intentionally minimal — the real design is being produced separately (in Claude design) and will replace it. Don't invest in polishing the existing UI; keep `app.js`'s API usage as the reference for how the frontend consumes the backend.
+
+## iOS App (`ios/`)
+
+SwiftUI companion app (quick capture, voice→Whisper, share extension, send-anywhere sheet, reminder local notifications) implementing the Claude Design handoff. **It cannot be built in this environment** (no Xcode/iOS SDK) — the Xcode project is generated on the Mac with `cd ios && xcodegen`; see `ios/README.md`. The brand palette/type live in `ios/Shared/Theme.swift`; bundle/group identifiers in `ios/Shared/AppGroup.swift` must stay in sync with `ios/project.yml`. Mobile clients authenticate with bearer tokens (`POST /api/auth/token`), accepted by `require_login` in app.py; notes created from the app use `source: 'ios'`.
