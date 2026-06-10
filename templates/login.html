@@ -1,20 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Remndrs — Login</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remndrs — Sign in</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="login-body">
   <form id="login-form" class="login-card">
-    <h1>Remndrs</h1>
+    <div class="wordmark">Remnd<span>r</span>s</div>
+    <div class="login-tag">Your always-on inbox</div>
     <input type="text" id="login" name="login" placeholder="Name or email" autofocus required>
     <input type="password" id="password" name="password" placeholder="Password" required>
-    <button type="submit">Log in</button>
-    <p id="login-error" class="login-error" hidden>Invalid credentials</p>
+    <button type="submit">Sign in</button>
+    <p id="login-error" class="login-error" hidden>Invalid name or password</p>
   </form>
   <script>
+    const saved = localStorage.getItem('remndrs-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const res = await fetch('/api/auth/login', {

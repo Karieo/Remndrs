@@ -46,7 +46,7 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 
 ## Frontend Note
 
-The current `templates/` + `static/` UI is intentionally minimal — the real design is being produced separately (in Claude design) and will replace it. Don't invest in polishing the existing UI; keep `app.js`'s API usage as the reference for how the frontend consumes the backend.
+The `templates/` + `static/` UI implements the Claude Design handoff (warm editorial palette, Playfair/Lora/IBM Plex Mono via Google Fonts CDN, channel chips, dark/light themes). Design tokens are CSS custom properties at the top of `app.css` (`:root[data-theme=…]`); the channel color system (`CH` in app.js) must stay in sync with `Channel` in `ios/Shared/Theme.swift`. Notes' visual channel comes from `source` (`web`/`ios` → App); calendar events render as separate purple-spine cards. The card `···` menu drives send-anywhere (`/api/notes/:id/send`, `/to-event`). Reply threads from the design mockup are NOT implemented — no backend model.
 
 ## iOS App (`ios/`)
 
