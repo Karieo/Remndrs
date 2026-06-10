@@ -14,10 +14,10 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 if [ -d "$DIR/.git" ]; then
-  echo "Updating existing install in $DIR…"
+  echo "Updating existing install in ${DIR}..."
   git -C "$DIR" pull --ff-only
 else
-  echo "Installing Remndrs into $DIR…"
+  echo "Installing Remndrs into ${DIR}..."
   git clone "$REPO" "$DIR"
 fi
 
