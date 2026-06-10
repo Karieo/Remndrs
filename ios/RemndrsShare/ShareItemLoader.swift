@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct SharedPayload {
     var text: String = ""
+    var url: URL?
+    var title: String?
     var imageData: [Data] = []
 }
 
@@ -15,19 +17,18 @@ struct ShareItemLoader {
         let items = (context?.inputItems as? [NSExtensionItem]) ?? []
 
         for item in items {
-            if payload.text.isEmpty,
+            // Safari puts the page title here.
+            if payload.title == nil,
                let attributed = item.attributedContentText?.string,
                !attributed.isEmpty {
-                payload.text = attributed
+                payload.title = attributed
             }
             for provider in item.attachments ?? [] {
                 if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
                     if let url = try? await provider.loadItem(
                         forTypeIdentifier: UTType.url.identifier) as? URL,
                        !url.isFileURL {
-                        payload.text = payload.text.isEmpty
-                            ? url.absoluteString
-                            : payload.text + "\n\n" + url.absoluteString
+                        payload.url = payload.url ?? url
                     }
                 } else if provider.hasItemConformingToTypeIdentifier(
                     UTType.plainText.identifier) {
@@ -44,6 +45,14 @@ struct ShareItemLoader {
                 }
             }
         }
+        // Shared plain text that is just a URL behaves like a URL share.
+        if payload.url == nil,
+           let candidate = URL(string: payload.text.trimmingCharacters(in: .whitespacesAndNewlines)),
+           candidate.scheme?.hasPrefix("http") == true {
+            payload.url = candidate
+            payload.text = ""
+        }
+        if payload.title == payload.url?.absoluteString { payload.title = nil }
         return payload
     }
 

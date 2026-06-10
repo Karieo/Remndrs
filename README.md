@@ -92,6 +92,25 @@ Subject becomes the bolded first line. `[shared]` in the subject routes to
 the shared feed. `#HASHTAGS` and `[BRACKETED]` subject prefixes become tags.
 Attachments are saved to iCloud and linked from the note.
 
+**Tagging from the email body** — three ways:
+
+- `Tags: groceries, costco` on its own line (the line is removed from the note)
+- A line of just hashtags: `#ideas #reading` (also removed)
+- Inline `#hashtags` anywhere in the text (tagged, text kept as-is)
+
+`Tags: shared` (or `#SHARED`) routes the note to the shared feed, same as SMS.
+
+**Email reminders:** forward any email and put a remind phrase with a time
+in the subject — or as the first line you type above the forwarded content:
+
+- `Remind me tomorrow at 9am — pay this invoice`
+- `Reminder: dentist next Tuesday at noon`
+- Subject `Fwd: Invoice #123`, first body line `remind me Friday at 3pm`
+
+The email is saved as a note (tagged #REMINDER) and a linked reminder fires
+via web banner, SMS, and the iOS app. If outbound email is configured you
+get a confirmation reply with the parsed time.
+
 ### iCloud Calendar (CalDAV)
 
 iCloud CalDAV requires an **app-specific password** — never your main Apple ID
