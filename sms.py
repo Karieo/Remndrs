@@ -98,22 +98,16 @@ def retrieve_recent(user):
 
 def create_reminder_from_text(user, text):
     """Parse 'REMIND ME [time expression] [message]' using dateparser."""
-    try:
-        from dateparser.search import search_dates
-    except ImportError:
-        return "Reminders aren't available right now."
-    results = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
-    if not results:
+    import reminders
+    parsed = reminders.parse_remind_text(text)
+    if not parsed:
         return ('Couldn\'t understand that time. '
                 'Try: "remind me June 15 at 3pm to [message]"')
-    matched_text, fire_at = results[0]
-    message = text.replace(matched_text, '', 1).strip()
-    message = re.sub(r'^(to|that)\s+', '', message, flags=re.IGNORECASE).strip()
-    if not message:
-        message = 'Reminder'
-    db.create_reminder(user['id'], message, fire_at.isoformat(timespec='seconds'),
+    fire_at, message = parsed
+    message = message or 'Reminder'
+    db.create_reminder(user['id'], message, fire_at,
                        notify_sms=True, notify_web=True)
-    human = fire_at.strftime('%A, %B %-d at %-I:%M %p')
+    human = datetime.fromisoformat(fire_at).strftime('%A, %B %-d at %-I:%M %p')
     return f'✓ Reminder set for {human}: "{message}"'
 
 
