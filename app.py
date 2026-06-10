@@ -1,5 +1,6 @@
 """Remndrs — Flask server: auth, all API routes, webhooks, SSE stream."""
 
+import hashlib
 import json
 import logging
 import os
@@ -66,7 +67,18 @@ seed_owner()
 
 # ── Auth ─────────────────────────────────────────────────
 
-PUBLIC_PATHS = ('/login', '/api/auth/login', '/webhooks/', '/static/')
+PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/webhooks/', '/static/')
+
+
+def _hash_token(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _user_from_bearer():
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return None
+    return db.get_user_by_token_hash(_hash_token(auth[7:].strip()))
 
 
 @app.before_request
@@ -75,6 +87,13 @@ def require_login():
     if any(path == p or path.startswith(p) for p in PUBLIC_PATHS):
         return None
     if session.get('user_id'):
+        return None
+    user = _user_from_bearer()
+    if user:
+        # Request-scoped identity: handlers read session['user_id'], but no
+        # cookie is sent back to the token client.
+        session['user_id'] = user['id']
+        session.modified = False
         return None
     if path.startswith('/api/'):
         return jsonify({'error': 'Unauthorized'}), 401
@@ -104,6 +123,32 @@ def api_login():
     return jsonify({'success': True,
                     'user': {'id': user['id'], 'name': user['name'],
                              'role': user['role']}})
+
+
+@app.route('/api/auth/token', methods=['POST'])
+def api_create_token():
+    """Issue a long-lived bearer token for mobile clients."""
+    data = request.get_json(silent=True) or {}
+    login = (data.get('login') or '').strip()
+    password = data.get('password') or ''
+    user = db.get_user_by_login(login)
+    if not user or not bcrypt.checkpw(password.encode(),
+                                      user['password_hash'].encode()):
+        return jsonify({'error': 'Invalid credentials'}), 401
+    token = secrets.token_urlsafe(32)
+    db.create_api_token(user['id'], _hash_token(token),
+                        device_name=data.get('device_name'))
+    return jsonify({'token': token,
+                    'user': {'id': user['id'], 'name': user['name'],
+                             'role': user['role']}}), 201
+
+
+@app.route('/api/auth/token', methods=['DELETE'])
+def api_revoke_token():
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        db.delete_api_token_by_hash(_hash_token(auth[7:].strip()))
+    return jsonify({'success': True})
 
 
 @app.route('/api/auth/logout', methods=['POST'])

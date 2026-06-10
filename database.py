@@ -159,6 +159,16 @@ CREATE TABLE IF NOT EXISTS user_caldav_credentials (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  device_name TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS note_calendar_links (
   note_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
@@ -257,6 +267,43 @@ def list_users():
 def count_users():
     with connect() as conn:
         return conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+
+
+# ── API tokens ───────────────────────────────────────────
+
+def create_api_token(user_id, token_hash, device_name=None):
+    token_id = str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO api_tokens (id, user_id, token_hash, device_name, created_at) '
+            'VALUES (?,?,?,?,?)',
+            (token_id, user_id, token_hash, device_name, now_iso()))
+        row = conn.execute('SELECT * FROM api_tokens WHERE id = ?', (token_id,)).fetchone()
+    return dict(row)
+
+
+def get_user_by_token_hash(token_hash):
+    with connect() as conn:
+        row = conn.execute(
+            'SELECT u.* FROM api_tokens t JOIN users u ON u.id = t.user_id '
+            'WHERE t.token_hash = ?', (token_hash,)).fetchone()
+        if row:
+            conn.execute('UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?',
+                         (now_iso(), token_hash))
+    return dict(row) if row else None
+
+
+def list_api_tokens(user_id):
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT id, device_name, created_at, last_used_at FROM api_tokens '
+            'WHERE user_id = ? ORDER BY created_at', (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_api_token_by_hash(token_hash):
+    with connect() as conn:
+        conn.execute('DELETE FROM api_tokens WHERE token_hash = ?', (token_hash,))
 
 
 # ── Tags ─────────────────────────────────────────────────
