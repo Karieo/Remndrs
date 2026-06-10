@@ -34,6 +34,11 @@ cd ~/remndrs && ./setup.sh
 Tools (macOS offers to install them automatically the first time `git` or
 `python3` runs).
 
+Works on both **Apple Silicon and Intel** Macs (Python 3.9+). All compiled
+dependencies install as prebuilt wheels for either architecture, and if you
+ever migrate the app folder between Macs (Intel → M-series), `setup.sh`
+detects the architecture mismatch and rebuilds the environment automatically.
+
 To stop the app and remove auto-start: `./uninstall.sh` (add `--purge` to also
 wipe the database and config — your notes in iCloud are never touched).
 

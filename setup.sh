@@ -26,16 +26,34 @@ if ! command -v python3 >/dev/null 2>&1; then
   fi
   fail "python3 is required"
 fi
-ok "Python $(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' \
+  || fail "Python 3.9+ required — update Command Line Tools (Software Update) or install python.org's universal2 build"
+ARCH="$(uname -m)"   # arm64 (Apple Silicon) | x86_64 (Intel)
+ok "Python $(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))') on $ARCH"
+if $IS_MAC && [ "$ARCH" = "x86_64" ] && [ "$(sysctl -in sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+  note "Terminal is running under Rosetta — the Intel build works fine, but for"
+  note "a native Apple Silicon install, reopen Terminal without Rosetta and re-run."
+fi
 
 # 2 · Virtualenv + dependencies ───────────────────────────
 # A venv avoids the 'externally-managed-environment' error on modern Macs.
+# Rebuild it if it's broken or was built for another CPU architecture
+# (e.g. carried from an Intel Mac to Apple Silicon by Migration Assistant).
+if [ -e "venv" ]; then
+  VENV_ARCH="$(venv/bin/python -c 'import platform; print(platform.machine())' 2>/dev/null || echo broken)"
+  if [ "$VENV_ARCH" != "$ARCH" ]; then
+    note "Existing virtualenv is $VENV_ARCH (this Mac is $ARCH) — rebuilding."
+    rm -rf venv
+  fi
+fi
 if [ ! -x "venv/bin/python" ]; then
   python3 -m venv venv
   ok "Created virtualenv"
 fi
 ./venv/bin/pip -q install --upgrade pip
-./venv/bin/pip -q install -r requirements.txt
+# --prefer-binary: never compile bcrypt/cryptography/lxml from source —
+# all of them ship prebuilt wheels for both arm64 and x86_64 macOS.
+./venv/bin/pip -q install --prefer-binary -r requirements.txt
 ok "Dependencies installed"
 PYTHON="$APP_DIR/venv/bin/python"
 
