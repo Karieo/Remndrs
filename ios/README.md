@@ -6,7 +6,13 @@ photos), a share extension for Safari/Photos, the feed in the brand design,
 
 The visual design comes from the Claude Design handoff (`Remndrs iOS.html`):
 warm dark palette, Playfair Display / Lora / IBM Plex Mono type, channel chips,
-gold accent. Fonts are bundled (all SIL OFL licensed).
+gold accent. Fonts are bundled in both targets (all SIL OFL licensed). The app
+icon (gold gradient, serif R) is generated per the design's share-sheet
+artboard and lives in `Remndrs/Assets.xcassets`.
+
+The share extension implements the design's "Save to Remndrs" capture sheet:
+clipped link preview, note field, App/Calendar channel picker (Calendar
+creates an iCloud event from the note), and live tag chips.
 
 ## Building (on your Mac)
 

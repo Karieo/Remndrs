@@ -19,30 +19,6 @@ struct ChannelChip: View {
     }
 }
 
-/// Tag pill — colored tick + uppercase mono name with a tinted border.
-struct TagPill: View {
-    let name: String
-    let colorHex: String
-
-    private var color: Color { Color(hexString: colorHex) }
-
-    var body: some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(color)
-                .frame(width: 2, height: 11)
-            Text(name.uppercased())
-                .font(Theme.mono(9.5, weight: .semibold))
-                .kerning(0.5)
-        }
-        .foregroundStyle(color)
-        .padding(.vertical, 2)
-        .padding(.horizontal, 7)
-        .overlay(RoundedRectangle(cornerRadius: 3)
-            .strokeBorder(color.opacity(0.4), lineWidth: 1))
-    }
-}
-
 /// Mono uppercase segmented control with the gold active pill.
 struct BrandSegmentedControl<T: Hashable>: View {
     @Binding var selection: T

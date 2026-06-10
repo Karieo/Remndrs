@@ -20,6 +20,9 @@ targets:
     sources:
       - Remndrs
       - Shared
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: RemndrsShare
         embed: true
@@ -68,6 +71,13 @@ targets:
       path: RemndrsShare/Info.plist
       properties:
         CFBundleDisplayName: Remndrs
+        UIAppFonts:
+          - PlayfairDisplay.ttf
+          - Lora.ttf
+          - Lora-Italic.ttf
+          - IBMPlexMono-Regular.ttf
+          - IBMPlexMono-Medium.ttf
+          - IBMPlexMono-SemiBold.ttf
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
