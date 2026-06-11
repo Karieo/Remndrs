@@ -55,6 +55,38 @@ UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads'
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 
+# ── Version ──────────────────────────────────────────────
+# VERSION is bumped by hand; the git commit + date below auto-update on every
+# `git pull`, so the login/settings stamp tells you at a glance whether a deploy
+# actually landed. Surfaced in the UI, at /api/version, and in the startup log.
+VERSION = '0.2.0'
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _git_build():
+    import subprocess
+    opts = {'cwd': _APP_DIR, 'stderr': subprocess.DEVNULL, 'timeout': 3}
+    try:
+        sha = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], **opts).decode().strip()
+        date = subprocess.check_output(
+            ['git', 'log', '-1', '--format=%cd', '--date=short'], **opts).decode().strip()
+        return sha, date
+    except Exception:
+        return None, None
+
+
+_GIT_SHA, _GIT_DATE = _git_build()
+VERSION_LABEL = (f'v{VERSION} · {_GIT_SHA} · {_GIT_DATE}'
+                 if _GIT_SHA else f'v{VERSION}')
+log.info('Remndrs %s starting', VERSION_LABEL)
+
+
+@app.context_processor
+def inject_version():
+    return {'app_version': VERSION_LABEL}
+
+
 # ── Bootstrap ────────────────────────────────────────────
 
 def seed_owner():
@@ -75,7 +107,8 @@ seed_owner()
 
 # ── Auth ─────────────────────────────────────────────────
 
-PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/webhooks/', '/static/')
+PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/api/version',
+                '/webhooks/', '/static/')
 
 
 def _hash_token(token):
@@ -110,6 +143,12 @@ def require_login():
 
 def current_user():
     return db.get_user(session.get('user_id'))
+
+
+@app.route('/api/version')
+def api_version():
+    return jsonify({'version': VERSION, 'commit': _GIT_SHA,
+                    'date': _GIT_DATE, 'label': VERSION_LABEL})
 
 
 @app.route('/login')
