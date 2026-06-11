@@ -5,6 +5,7 @@ struct NoteCardView: View {
     let note: Note
     let myUserID: String
     var showSender = false
+    var onEdit: (() -> Void)?
     var onSend: (() -> Void)?
     var onShareWith: (() -> Void)?
     var onDelete: (() -> Void)?
@@ -66,7 +67,14 @@ struct NoteCardView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+        .contentShape(Rectangle())
+        // Tap-to-edit only where there's no reply field to fight with;
+        // shared cards edit via the long-press menu.
+        .onTapGesture { if onReply == nil { onEdit?() } }
         .contextMenu {
+            if let onEdit {
+                Button { onEdit() } label: { Label("Edit note & tags", systemImage: "pencil") }
+            }
             if let onSend {
                 Button { onSend() } label: { Label("Send to…", systemImage: "paperplane") }
             }

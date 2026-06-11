@@ -15,6 +15,8 @@ struct ComposerView: View {
 
     /// Prefill support (share extension paths reuse ShareComposeView instead).
     var initialText: String = ""
+    /// When set, the composer edits this note (PATCH) instead of creating one.
+    var editingNote: Note?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,7 +35,25 @@ struct ComposerView: View {
         .background(Theme.bg)
         .preferredColorScheme(.dark)
         .onAppear {
-            text = initialText
+            if let note = editingNote {
+                mode = note.type == "todo" ? "todo" : "note"
+                feed = note.feed
+                var lines: [String]
+                if note.type == "todo" {
+                    lines = [note.content.components(separatedBy: "\n").first ?? note.content]
+                    lines += note.todos.map { "\($0.checked ? "[x] " : "")\($0.text)" }
+                } else {
+                    lines = [note.content]
+                }
+                var prefill = lines.joined(separator: "\n")
+                if !note.tags.isEmpty {
+                    prefill += "\n\n" + note.tags.map { "#\($0.name.lowercased())" }
+                        .joined(separator: " ")
+                }
+                text = prefill
+            } else {
+                text = initialText
+            }
             focused = true
         }
         .alert("Couldn't save", isPresented: .init(
@@ -51,7 +71,8 @@ struct ComposerView: View {
                 .font(Theme.body(15))
                 .foregroundStyle(Theme.textMuted)
             Spacer()
-            Text(mode == "todo" ? "New To-Do" : "New Note")
+            Text(editingNote != nil ? "Edit \(mode == "todo" ? "To-Do" : "Note")"
+                 : (mode == "todo" ? "New To-Do" : "New Note"))
                 .font(Theme.display(17))
                 .foregroundStyle(Theme.text)
             Spacer()
@@ -167,17 +188,40 @@ struct ComposerView: View {
         do {
             let tags = extractedTags
             let body = Self.stripHashtags(from: text)
-            let note: Note
+            var content = body
+            var todos: [TodoItem] = []
             if mode == "todo" {
                 var lines = body.components(separatedBy: "\n")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
-                let title = lines.isEmpty ? "To-Do" : lines.removeFirst()
-                let todos = lines.map { TodoItem(id: nil, text: $0, checked: false) }
-                note = try await api.createNote(content: title, tags: tags, feed: feed,
+                content = lines.isEmpty ? "To-Do" : lines.removeFirst()
+                todos = lines.map { line in
+                    // "[x] item" round-trips a completed item, like the web UI.
+                    if let range = line.range(of: #"^\[( |x|X)\]\s*"#,
+                                              options: .regularExpression) {
+                        let checked = line[range].lowercased().contains("x")
+                        return TodoItem(id: nil,
+                                        text: String(line[range.upperBound...]),
+                                        checked: checked)
+                    }
+                    return TodoItem(id: nil, text: line, checked: false)
+                }
+            }
+
+            let note: Note
+            if let editing = editingNote {
+                var fields: [String: Any] = [
+                    "content": content, "tags": tags, "feed": feed, "type": mode,
+                ]
+                if mode == "todo" {
+                    fields["todos"] = todos.map { ["text": $0.text, "checked": $0.checked] }
+                }
+                note = try await api.updateNote(id: editing.id, fields: fields)
+            } else if mode == "todo" {
+                note = try await api.createNote(content: content, tags: tags, feed: feed,
                                                 type: "todo", todos: todos)
             } else {
-                note = try await api.createNote(content: body, tags: tags, feed: feed)
+                note = try await api.createNote(content: content, tags: tags, feed: feed)
             }
             try await attachPhotos(to: note, api: api)
             UINotificationFeedbackGenerator().notificationOccurred(.success)

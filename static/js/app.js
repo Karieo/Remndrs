@@ -82,10 +82,16 @@ async function loadNotes() {
 }
 
 async function refreshSharedBadge() {
-  const shared = await api('/api/notes?feed=shared').catch(() => []);
+  // Count everything the Shared feed shows: notes plus shared calendar events.
+  const [shared, allEvents] = await Promise.all([
+    api('/api/notes?feed=shared').catch(() => []),
+    api('/api/calendar/events').catch(() => []),
+  ]);
+  const count = shared.length
+    + allEvents.filter(ev => ev.feed === 'shared' && !ev.deleted).length;
   const badge = document.getElementById('sharedBadge');
-  badge.textContent = shared.length;
-  badge.hidden = !shared.length;
+  badge.textContent = count;
+  badge.hidden = !count;
 }
 
 /* ─── Render: channel rail ─────────────────────────────────── */
