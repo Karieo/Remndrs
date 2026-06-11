@@ -365,8 +365,10 @@ def delete_api_token_by_hash(token_hash):
 def list_tags():
     with connect() as conn:
         rows = conn.execute(
-            'SELECT t.id, t.name, t.color, COUNT(nt.note_id) AS count '
+            'SELECT t.id, t.name, t.color, COUNT(nt.note_id) AS count, '
+            'MAX(n.created_at) AS last_used '
             'FROM tags t LEFT JOIN note_tags nt ON nt.tag_id = t.id '
+            'LEFT JOIN notes n ON n.id = nt.note_id '
             'GROUP BY t.id ORDER BY count DESC, t.name').fetchall()
     return [dict(r) for r in rows]
 
@@ -519,6 +521,13 @@ def _fts_query(search):
     return ' '.join(f'"{t}"' for t in tokens) if tokens else None
 
 
+def _like_term(term):
+    """Wrap a search word as a case-insensitive LIKE pattern, escaping the
+    SQL wildcards so a user typing % or _ searches for those literal chars."""
+    escaped = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return f'%{escaped}%'
+
+
 def list_notes(user_id, tag=None, search=None, source=None, feed=None):
     sql = ('SELECT DISTINCT n.* FROM notes n ')
     where = ["(n.user_id = ? AND n.feed = 'private') OR n.feed = 'shared'"]
@@ -536,11 +545,16 @@ def list_notes(user_id, tag=None, search=None, source=None, feed=None):
         where.append('n.feed = ?')
         params.append(feed)
     if search:
-        fts = _fts_query(search)
-        if fts:
-            sql += 'JOIN notes_fts f ON f.rowid = n.rowid '
-            where.append('notes_fts MATCH ?')
-            params.append(fts)
+        # Substring match on note body OR any of its todo items, AND-ing the
+        # search words so partial typing ("war" → Warhammer) and to-do text
+        # both turn up — FTS only indexed whole words of the body.
+        for term in re.findall(r'\S+', search):
+            like = _like_term(term)
+            where.append(
+                "(n.content LIKE ? ESCAPE '\\' OR EXISTS ("
+                "SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id "
+                "AND ti.text LIKE ? ESCAPE '\\'))")
+            params.extend([like, like])
 
     sql += 'WHERE (' + ') AND ('.join(where) + ') '
     sql += 'ORDER BY n.pinned DESC, n.created_at DESC'
