@@ -141,3 +141,62 @@ Your Mac's `~/Remndrs` folder and notes stay put — nothing is deleted.
 ```bash
 ssh pi@remndrs-pi.local 'cd ~/Remndrs && git pull && sudo systemctl restart remndrs'
 ```
+
+## Hosting more sites on the same Pi
+
+The setup above scales to any number of sites — the one cloudflared tunnel
+routes them all, with zero open router ports. A few one-time choices make
+that painless:
+
+**Before installing anything** (worth doing on day one):
+
+```bash
+sudo apt update && sudo apt full-upgrade -y
+# security patches install themselves from now on:
+sudo apt install -y unattended-upgrades
+```
+
+Also give the Pi a **DHCP reservation** in your router's admin page so its
+LAN address never changes (the tunnel doesn't care, but SSH and Syncthing do).
+
+**The pattern for every new site** (this is all of it):
+
+1. Run the app as its own user-or-port — keep a port registry in a comment
+   at the top of `~/.cloudflared/config.yml`. Remndrs owns **3000**; give the
+   next site 3001, then 3002, …
+2. One systemd unit per app (copy `remndrs.service`, change the name,
+   `WorkingDirectory`, and `ExecStart`).
+3. Add the hostname to the tunnel's ingress list and create its DNS route:
+
+```yaml
+# ~/.cloudflared/config.yml — ingress rules are matched top-down
+tunnel: remndrs
+credentials-file: /home/pi/.cloudflared/<tunnel-id>.json
+ingress:
+  - hostname: remndrs.app          # port registry:
+    service: http://localhost:3000 #   3000 remndrs
+  - hostname: nextsite.com         #   3001 nextsite
+    service: http://localhost:3001
+  - service: http_status:404       # catch-all, keep last
+```
+
+```bash
+# the new domain must be added to your Cloudflare account first (free plan ok)
+cloudflared tunnel route dns remndrs nextsite.com
+sudo systemctl restart cloudflared
+```
+
+That's a new public HTTPS site in ~2 minutes, no certificates to manage,
+nothing exposed on your router.
+
+**Two honest cautions for a multi-site Pi:**
+
+- **SD cards wear out.** With several apps writing databases, either boot
+  from a USB SSD (Pi 4 supports it natively) or at minimum back up each
+  app's data folder somewhere off-Pi on a cron (Remndrs: `data/remndrs.db`
+  + the notes folder, which Syncthing already mirrors).
+- **One Pi = one failure domain.** If a hobby site gets popular or
+  experimental code runs away with the CPU, it can starve the others —
+  `htop` is your friend, and `systemd` resource limits (`MemoryMax=`,
+  `CPUQuota=`) are the fix.
+
