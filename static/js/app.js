@@ -96,10 +96,25 @@ async function refreshSharedBadge() {
 }
 
 /* ─── Render: channel rail ─────────────────────────────────── */
+let channelStatus = {};
+async function loadChannelStatus(){
+  channelStatus = await api('/api/integrations/status').catch(()=>({}));
+  renderChanRail();
+}
+// Show a channel only if its integration is connected — or if notes already
+// arrived through it, so a since-disconnected channel still filters its history.
+function channelVisible(k){
+  if (k === 'app') return true;            // web/iOS always work
+  if (channelStatus[k]) return true;
+  if (k === 'cal') return events.some(ev => !ev.deleted);
+  return notes.some(n => noteChan(n) === k);
+}
 function renderChanRail() {
   const rail = document.getElementById('chanRail');
+  if (activeChan !== 'all' && !channelVisible(activeChan)) activeChan = 'all';
   let html = `<button class="chan-filter all ${activeChan==='all'?'active':''}" onclick="setChan('all')">All</button>`;
   for (const [k,v] of Object.entries(CH)) {
+    if (!channelVisible(k)) continue;
     html += `<button class="chan-filter ${activeChan===k?'active':''}" style="--cf:${v.c}" onclick="setChan('${k}')">${svg(v.ic,12)} ${v.label}</button>`;
   }
   rail.innerHTML = html;
@@ -107,11 +122,24 @@ function renderChanRail() {
 function setChan(k){ activeChan = k; renderChanRail(); renderCards(); }
 
 /* ─── Render: tag bar ──────────────────────────────────────── */
+const TAG_BAR_LIMIT = 9;
 function renderTagBar() {
   const bar = document.getElementById('tagBar');
   let html = `<button class="tag-bar-action" onclick="openTagAdd()">+ Add Tag</button><button class="tag-bar-action" onclick="openTagEdit()"># Edit Tags</button><div class="tag-divider"></div>`;
-  for (const t of tags) {
-    if (!t.count && !activeTags.has(t.name)) continue;
+  // Only the most recently-used tags get a pill so the bar stays one or two
+  // rows; the full set still lives under "Edit Tags". Active filters always
+  // show, even if they've aged out of the recent list.
+  const recent = tags.filter(t => t.count)
+    .sort((a,b) => String(b.last_used||'').localeCompare(String(a.last_used||'')))
+    .slice(0, TAG_BAR_LIMIT);
+  const shown = new Set(recent.map(t => t.name));
+  for (const name of activeTags) {
+    if (!shown.has(name)) {
+      const t = tags.find(x => x.name === name);
+      if (t) { recent.push(t); shown.add(name); }
+    }
+  }
+  for (const t of recent) {
     html += `<button class="tag-pill ${activeTags.has(t.name)?'active':''}" style="--tag-color:${t.color}" onclick="toggleTag('${esc(t.name)}')">${esc(t.name)}</button>`;
   }
   bar.innerHTML = html;
@@ -347,6 +375,7 @@ function renderCards() {
   ].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || String(b.at).localeCompare(String(a.at)));
   grid.innerHTML = items.length ? items.map(i => i.html()).join('')
     : `<div class="grid-empty">No ${activeFeed==='shared'?'shared ':''}notes match.</div>`;
+  renderChanRail();   // notes/events just changed — a channel may now (dis)appear
   hydrateLinkPreviews();
   visibleEvents().forEach(ev => loadCalNotes(ev.id));
 }
@@ -406,13 +435,20 @@ function onSearchInput(){
 function closeAllMenus(){
   document.querySelectorAll('.dropdown.open').forEach(d=>d.classList.remove('open'));
   document.querySelectorAll('.card-menu.open').forEach(b=>b.classList.remove('open'));
+  document.querySelectorAll('.card.menu-open').forEach(c=>c.classList.remove('menu-open'));
 }
 function toggleMenu(e,id){
   e.stopPropagation();
   const dd = document.getElementById('dd-'+id);
   const wasOpen = dd.classList.contains('open');
   closeAllMenus();
-  if (!wasOpen){ dd.classList.add('open'); e.currentTarget.classList.add('open'); }
+  if (!wasOpen){
+    dd.classList.add('open');
+    e.currentTarget.classList.add('open');
+    // Lift the whole card above its neighbours; in the masonry columns a
+    // plain z-index on the menu still paints under the next card down.
+    dd.closest('.card')?.classList.add('menu-open');
+  }
 }
 document.addEventListener('click', closeAllMenus);
 
@@ -477,7 +513,15 @@ async function confirmSend(){
 async function copyNote(id){
   closeAllMenus();
   const n = notes.find(x=>x.id===id);
-  if (navigator.clipboard && n) navigator.clipboard.writeText(n.content).catch(()=>{});
+  if (!n) return;
+  // A to-do note's content is only its title — the items live in n.todos, so
+  // copying content alone lost the whole list. Rebuild the full text here.
+  let text = n.content || '';
+  if (n.type === 'todo' && n.todos && n.todos.length) {
+    text = [n.content, ...n.todos.map(t => `${t.checked ? '[x]' : '[ ]'} ${t.text}`)]
+      .filter(Boolean).join('\n');
+  }
+  if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
   toast(`${svg('copy',13)} Copied to clipboard`);
 }
 async function togglePin(id){
@@ -891,6 +935,31 @@ function updateComposerTags(){
     const color = existing ? existing.color : PALETTE[(tags.length+i) % PALETTE.length];
     return `<span class="ct-pill ${existing?'':'ct-new'}" style="--tag-color:${color}">${esc(t)}${existing?'':' · new'}</span>`;
   }).join('');
+  renderTagSuggestions(found);
+}
+
+/* One-tap reuse of existing tags so you don't retype them (or fork a near-dup). */
+function renderTagSuggestions(found){
+  const el = document.getElementById('composerSuggest');
+  if (!el) return;
+  const used = new Set(found);
+  const avail = tags.filter(t => t.count && !used.has(t.name))
+    .sort((a,b) => String(b.last_used||'').localeCompare(String(a.last_used||'')))
+    .slice(0, 12);
+  el.innerHTML = avail.length
+    ? `<span class="ct-label">Add existing</span>` + avail.map(t =>
+        `<button type="button" class="ct-suggest" style="--tag-color:${t.color}" onclick="addComposerTag('${esc(t.name)}')">${esc(t.name)}</button>`).join('')
+    : '';
+}
+
+function addComposerTag(name){
+  const ta = document.getElementById('composerText');
+  const { tags:cur } = extractTags(ta.value);
+  if (cur.includes(name)) return;   // already on the note
+  const sep = ta.value && !/\s$/.test(ta.value) ? ' ' : '';
+  ta.value = ta.value + sep + '#' + name.toLowerCase() + ' ';
+  updateComposerTags();
+  ta.focus();
 }
 
 async function saveNote(){
@@ -980,6 +1049,7 @@ const savedTheme = localStorage.getItem('remndrs-theme');
 if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 renderChanRail();
 setThemeIcon();
+loadChannelStatus();
 loadTags();
 loadNotes();
 loadPeople();

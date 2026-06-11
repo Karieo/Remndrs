@@ -113,6 +113,9 @@ button { font-family:inherit; }
   box-shadow:var(--shadow); transition:box-shadow .15s,transform .1s,border-color .15s;
 }
 .card:hover { box-shadow:var(--shadow-hover); transform:translateY(-1px); }
+/* While its menu is open the card sits above its neighbours so the dropdown
+   isn't painted under the next card down in the masonry column. */
+.card.menu-open { z-index:40; }
 .card.editable { cursor:pointer; }
 .card.pinned { background:var(--pinned-bg); border-left-color:var(--pinned-border); }
 
@@ -352,6 +355,11 @@ button { font-family:inherit; }
 .composer-tagrow .ct-pill { font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; padding:2px 6px 2px 4px; border-radius:2px; display:inline-flex; align-items:center; gap:4px; border:1px solid color-mix(in srgb,var(--tag-color) 40%,transparent); color:var(--tag-color); }
 .composer-tagrow .ct-pill::before { content:''; display:block; width:2px; height:9px; border-radius:1px; background:var(--tag-color); }
 .composer-tagrow .ct-new { opacity:0.7; }
+.composer-tagsuggest { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:0 16px 12px; }
+.composer-tagsuggest:empty { display:none; }
+.composer-tagsuggest .ct-label { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.6px; }
+.ct-suggest { font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; padding:2px 7px; border-radius:2px; cursor:pointer; background:transparent; border:1px solid color-mix(in srgb,var(--tag-color) 30%,transparent); color:var(--tag-color); opacity:0.72; transition:opacity .12s; }
+.ct-suggest:hover { opacity:1; }
 .composer-remind { display:flex; align-items:center; gap:8px; padding:0 16px 12px; }
 .composer-remind input[type=datetime-local] { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; color-scheme:dark; }
 :root[data-theme="light"] .composer-remind input[type=datetime-local] { color-scheme:light; }

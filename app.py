@@ -365,6 +365,20 @@ def api_get_settings():
     return jsonify(values)
 
 
+@app.route('/api/integrations/status')
+def api_integrations_status():
+    """Which capture channels are actually wired up. Unlike /api/settings this
+    is readable by every signed-in user so the channel rail can hide the
+    channels nobody can use yet."""
+    return jsonify({
+        'sms': sms.twilio_configured(),
+        'telegram': telegram.telegram_configured(),
+        'voice': voice.openai_configured(),
+        'email': email_inbound.mailgun_configured(),
+        'cal': bool(os.getenv('CALDAV_USERNAME') and os.getenv('CALDAV_PASSWORD')),
+    })
+
+
 @app.route('/api/settings', methods=['PATCH'])
 def api_update_settings():
     if not _require_owner():
@@ -654,6 +668,13 @@ def api_delete_reminder(rem_id):
 
 # ── Link preview ─────────────────────────────────────────
 
+def _youtube_id(url):
+    m = re.search(
+        r'(?:youtu\.be/|youtube\.com/(?:watch\?(?:[^&]*&)*v=|embed/|shorts/|live/))'
+        r'([\w-]{11})', url)
+    return m.group(1) if m else None
+
+
 def _meta(html, *names):
     for name in names:
         m = re.search(
@@ -676,6 +697,36 @@ def api_link_preview():
     cached = db.get_link_preview(url)
     if cached:
         return jsonify(cached)
+
+    # YouTube serves its og: tags behind bot/consent walls that the plain
+    # scraper below trips over, so a link to a video showed no card at all.
+    # oEmbed gives a reliable title; the thumbnail URL is derivable from the
+    # video id, so a YouTube link always renders a preview now.
+    yt = _youtube_id(url)
+    if yt:
+        title, image = None, f'https://img.youtube.com/vi/{yt}/hqdefault.jpg'
+        try:
+            r = http.get('https://www.youtube.com/oembed',
+                         params={'url': f'https://www.youtube.com/watch?v={yt}',
+                                 'format': 'json'}, timeout=5)
+            if r.ok:
+                j = r.json()
+                title = j.get('title') or title
+                image = j.get('thumbnail_url') or image
+        except Exception:
+            pass
+        preview = {
+            'url': url, 'title': title or 'YouTube video', 'description': None,
+            'image': image, 'favicon': None, 'site_name': 'YouTube',
+        }
+        # Only cache once we have the real title — otherwise a transient oEmbed
+        # failure would freeze the generic "YouTube video" label forever.
+        if title:
+            db.save_link_preview(url, preview['title'], preview['description'],
+                                 preview['image'], preview['favicon'],
+                                 preview['site_name'])
+        return jsonify(preview)
+
     try:
         resp = http.get(url, timeout=5, headers={
             'User-Agent': 'Mozilla/5.0 (compatible; Remndrs/1.0)'})
