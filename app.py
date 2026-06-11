@@ -953,15 +953,23 @@ def webhook_email():
 # ── Startup ──────────────────────────────────────────────
 
 def pick_port():
-    preferred = int(os.getenv('PORT', 3000))
-    for port in (preferred, 3001, 3002):
+    # An explicit PORT is honored exactly — never drift. Behind the Cloudflare
+    # tunnel (which forwards one fixed port) a silent fallback would point the
+    # tunnel at a dead port and serve 502s.
+    if os.getenv('PORT'):
+        return int(os.getenv('PORT'))
+    # Otherwise scan, but match the server's own SO_REUSEADDR so a port still in
+    # TIME_WAIT from a just-restarted instance doesn't fool the probe into
+    # drifting to 3001 (the exact cause of the 3000→3001 service-restart bug).
+    for port in (3000, 3001, 3002):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(('127.0.0.1', port))
                 return port
             except OSError:
                 continue
-    return preferred
+    return 3000
 
 
 if __name__ == '__main__':
