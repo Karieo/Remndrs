@@ -35,6 +35,7 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 - `sse.py` — per-connection `queue.Queue` subscriptions (`subscribe`/`unsubscribe`), so every open tab/device gets every event. `push_note_event()` fans shared-feed notes out to all users. `/api/stream` in app.py drains a subscription with a 30s heartbeat; it accepts bearer tokens, which is how the iOS app (`ios/Remndrs/SSEClient.swift`) connects.
 - `reminders.py` — APScheduler `BackgroundScheduler`: reminder dispatch every 60s, calendar sync every 10min. Started only under `if __name__ == '__main__'` in app.py.
 - `sms.py` — Twilio webhook command parser (`GET`/`FIND`/`LIST`/`REMIND ME`/free text), reply sending, MMS download. `REMIND ME` time parsing uses `dateparser.search.search_dates`.
+- `telegram.py` — Telegram bot channel (no carrier registration, unlike SMS); reuses `sms.py`'s command helpers. The webhook self-registers via `POST /api/settings/telegram/connect` (calls Telegram `setWebhook` with a generated `TELEGRAM_WEBHOOK_SECRET`, which Telegram echoes in the `X-Telegram-Bot-Api-Secret-Token` header and `verify_secret` checks — that's this channel's signature equivalent). Users link by pasting the chat ID (`telegram_chat_id` on `users`) the bot replies with.
 - `voice.py`, `email_inbound.py`, `attachments.py`, `calendar_sync.py` — one module per inbound channel/integration.
 
 **Key invariants:**

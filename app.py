@@ -28,6 +28,7 @@ import files
 import reminders
 import sms
 import sse
+import telegram
 import voice
 
 logging.basicConfig(level=logging.INFO,
@@ -313,6 +314,7 @@ SETTINGS_KEYS = {
     'MAILGUN_INBOUND_ADDRESS': False,
     'CALDAV_USERNAME': False,
     'CALDAV_PASSWORD': True,
+    'TELEGRAM_BOT_TOKEN': True,
     'PUBLIC_URL': False,
 }
 
@@ -358,6 +360,7 @@ def api_get_settings():
         'email_in': email_inbound.mailgun_configured(),
         'email_out': email_inbound.mailgun_send_configured(),
         'calendar': bool(os.getenv('CALDAV_USERNAME') and os.getenv('CALDAV_PASSWORD')),
+        'telegram': telegram.telegram_configured(),
     }
     return jsonify(values)
 
@@ -408,6 +411,19 @@ def api_test_settings(service):
                 return jsonify({'ok': True, 'detail': f'Domain {domain}: {state}'})
             return jsonify({'ok': False, 'detail': f'Mailgun says {resp.status_code} for {domain}'})
 
+        if service == 'telegram':
+            if not telegram.telegram_configured():
+                return jsonify({'ok': False, 'detail': 'Bot token required'})
+            me = telegram.get_me()
+            if not me.get('ok'):
+                return jsonify({'ok': False,
+                                'detail': me.get('description', 'Invalid bot token')})
+            username = me['result'].get('username', '?')
+            hooked = bool(telegram.webhook_info().get('result', {}).get('url'))
+            return jsonify({'ok': True, 'detail': f'@{username} — '
+                            + ('webhook connected' if hooked
+                               else 'token valid, now click Connect')})
+
         if service == 'caldav':
             import calendar_sync
             calendars = calendar_sync.discover_calendars(session['user_id'])
@@ -422,6 +438,28 @@ def api_test_settings(service):
         return jsonify({'ok': False, 'detail': str(e)[:200]})
 
 
+@app.route('/api/settings/telegram/connect', methods=['POST'])
+def api_telegram_connect():
+    """Register the bot's webhook with Telegram (owner only, one-time setup)."""
+    if not _require_owner():
+        return jsonify({'error': 'Owner only'}), 403
+    if not telegram.telegram_configured():
+        return jsonify({'ok': False, 'detail': 'Save your bot token first'})
+    public = os.getenv('PUBLIC_URL', '').strip()
+    if not public:
+        return jsonify({'ok': False,
+                        'detail': 'Set your Public URL in the Webhooks tab first'})
+    secret = os.getenv('TELEGRAM_WEBHOOK_SECRET')
+    if not secret:
+        secret = secrets.token_urlsafe(24)
+        _write_env({'TELEGRAM_WEBHOOK_SECRET': secret})
+    result = telegram.set_webhook(public, secret)
+    if result.get('ok'):
+        return jsonify({'ok': True,
+                        'detail': 'Connected — text your bot to capture notes'})
+    return jsonify({'ok': False, 'detail': result.get('description', 'setWebhook failed')})
+
+
 # ── Users ────────────────────────────────────────────────
 
 @app.route('/api/users')
@@ -434,7 +472,8 @@ def api_list_users():
 def api_get_me():
     user = current_user()
     return jsonify({k: user.get(k) for k in
-                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number')})
+                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
+                     'telegram_chat_id')})
 
 
 @app.route('/api/users/me', methods=['PATCH'])
@@ -443,9 +482,11 @@ def api_update_me():
     user = db.update_user_contact(session['user_id'],
                                   email=data.get('email'),
                                   phone_number=data.get('phone_number'),
-                                  twilio_number=data.get('twilio_number'))
+                                  twilio_number=data.get('twilio_number'),
+                                  telegram_chat_id=data.get('telegram_chat_id'))
     return jsonify({k: user.get(k) for k in
-                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number')})
+                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
+                     'telegram_chat_id')})
 
 
 @app.route('/api/users', methods=['POST'])
@@ -883,6 +924,16 @@ def webhook_sms():
         twiml += f'<Message>{escape(reply)}</Message>'
     twiml += '</Response>'
     return Response(twiml, mimetype='text/xml')
+
+
+@app.route('/webhooks/telegram', methods=['POST'])
+def webhook_telegram():
+    if not telegram.telegram_configured():
+        return '', 200
+    if not telegram.verify_secret(request):
+        return '', 403
+    telegram.handle_update(request.get_json(silent=True) or {})
+    return '', 200
 
 
 @app.route('/webhooks/voice/answer', methods=['POST'])

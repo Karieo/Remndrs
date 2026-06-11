@@ -51,11 +51,12 @@ enum Theme {
 
 /// Source channels, exactly as in the design (color + icon + label).
 enum Channel: String, CaseIterable {
-    case sms, voice, email, calendar, app
+    case sms, telegram, voice, email, calendar, app
 
     init(source: String) {
         switch source {
         case "sms": self = .sms
+        case "telegram": self = .telegram
         case "voice": self = .voice
         case "email": self = .email
         default: self = .app   // 'web' and 'ios' both read as App
@@ -65,6 +66,7 @@ enum Channel: String, CaseIterable {
     var label: String {
         switch self {
         case .sms: return "SMS"
+        case .telegram: return "Telegram"
         case .voice: return "Voice"
         case .email: return "Email"
         case .calendar: return "Calendar"
@@ -75,6 +77,7 @@ enum Channel: String, CaseIterable {
     var color: Color {
         switch self {
         case .sms: return Color(hex: 0x4ADE80)
+        case .telegram: return Color(hex: 0x38BDF8)
         case .voice: return Color(hex: 0xA78BFA)
         case .email: return Color(hex: 0xFB923C)
         case .calendar: return Color(hex: 0x7C6FCD)
@@ -86,6 +89,7 @@ enum Channel: String, CaseIterable {
     var symbol: String {
         switch self {
         case .sms: return "bubble.left"
+        case .telegram: return "paperplane"
         case .voice: return "mic"
         case .email: return "envelope"
         case .calendar: return "calendar"
@@ -98,6 +102,7 @@ enum Channel: String, CaseIterable {
     var sourceFilter: String? {
         switch self {
         case .sms: return "sms"
+        case .telegram: return "telegram"
         case .voice: return "voice"
         case .email: return "email"
         case .calendar, .app: return nil
