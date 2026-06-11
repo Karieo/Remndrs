@@ -19,6 +19,7 @@ import bcrypt
 import requests as http
 from flask import (Flask, Response, jsonify, redirect, render_template,
                    request, send_file, session)
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import attachments as attachments_module
 import database as db
@@ -34,6 +35,13 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger('remndrs')
 
 app = Flask(__name__)
+
+# Behind the Cloudflare tunnel (or any reverse proxy) the request reaches us
+# over plain http on localhost, so Flask would reconstruct request.url with the
+# wrong scheme/host. Twilio and Mailgun sign the *public* https URL, so without
+# this their signature checks fail with a 403 and inbound notes silently vanish.
+# Trust the X-Forwarded-Proto/Host headers cloudflared sets.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 _secret = os.getenv('SESSION_SECRET')
 if not _secret:
