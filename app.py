@@ -28,6 +28,7 @@ import files
 import reminders
 import sms
 import sse
+import telegram
 import voice
 
 logging.basicConfig(level=logging.INFO,
@@ -55,6 +56,38 @@ UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads'
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 
+# ── Version ──────────────────────────────────────────────
+# VERSION is bumped by hand; the git commit + date below auto-update on every
+# `git pull`, so the login/settings stamp tells you at a glance whether a deploy
+# actually landed. Surfaced in the UI, at /api/version, and in the startup log.
+VERSION = '0.2.0'
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _git_build():
+    import subprocess
+    opts = {'cwd': _APP_DIR, 'stderr': subprocess.DEVNULL, 'timeout': 3}
+    try:
+        sha = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], **opts).decode().strip()
+        date = subprocess.check_output(
+            ['git', 'log', '-1', '--format=%cd', '--date=short'], **opts).decode().strip()
+        return sha, date
+    except Exception:
+        return None, None
+
+
+_GIT_SHA, _GIT_DATE = _git_build()
+VERSION_LABEL = (f'v{VERSION} · {_GIT_SHA} · {_GIT_DATE}'
+                 if _GIT_SHA else f'v{VERSION}')
+log.info('Remndrs %s starting', VERSION_LABEL)
+
+
+@app.context_processor
+def inject_version():
+    return {'app_version': VERSION_LABEL}
+
+
 # ── Bootstrap ────────────────────────────────────────────
 
 def seed_owner():
@@ -75,7 +108,8 @@ seed_owner()
 
 # ── Auth ─────────────────────────────────────────────────
 
-PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/webhooks/', '/static/')
+PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/api/version',
+                '/webhooks/', '/static/')
 
 
 def _hash_token(token):
@@ -110,6 +144,12 @@ def require_login():
 
 def current_user():
     return db.get_user(session.get('user_id'))
+
+
+@app.route('/api/version')
+def api_version():
+    return jsonify({'version': VERSION, 'commit': _GIT_SHA,
+                    'date': _GIT_DATE, 'label': VERSION_LABEL})
 
 
 @app.route('/login')
@@ -274,6 +314,7 @@ SETTINGS_KEYS = {
     'MAILGUN_INBOUND_ADDRESS': False,
     'CALDAV_USERNAME': False,
     'CALDAV_PASSWORD': True,
+    'TELEGRAM_BOT_TOKEN': True,
     'PUBLIC_URL': False,
 }
 
@@ -319,6 +360,7 @@ def api_get_settings():
         'email_in': email_inbound.mailgun_configured(),
         'email_out': email_inbound.mailgun_send_configured(),
         'calendar': bool(os.getenv('CALDAV_USERNAME') and os.getenv('CALDAV_PASSWORD')),
+        'telegram': telegram.telegram_configured(),
     }
     return jsonify(values)
 
@@ -369,6 +411,19 @@ def api_test_settings(service):
                 return jsonify({'ok': True, 'detail': f'Domain {domain}: {state}'})
             return jsonify({'ok': False, 'detail': f'Mailgun says {resp.status_code} for {domain}'})
 
+        if service == 'telegram':
+            if not telegram.telegram_configured():
+                return jsonify({'ok': False, 'detail': 'Bot token required'})
+            me = telegram.get_me()
+            if not me.get('ok'):
+                return jsonify({'ok': False,
+                                'detail': me.get('description', 'Invalid bot token')})
+            username = me['result'].get('username', '?')
+            hooked = bool(telegram.webhook_info().get('result', {}).get('url'))
+            return jsonify({'ok': True, 'detail': f'@{username} — '
+                            + ('webhook connected' if hooked
+                               else 'token valid, now click Connect')})
+
         if service == 'caldav':
             import calendar_sync
             calendars = calendar_sync.discover_calendars(session['user_id'])
@@ -383,6 +438,28 @@ def api_test_settings(service):
         return jsonify({'ok': False, 'detail': str(e)[:200]})
 
 
+@app.route('/api/settings/telegram/connect', methods=['POST'])
+def api_telegram_connect():
+    """Register the bot's webhook with Telegram (owner only, one-time setup)."""
+    if not _require_owner():
+        return jsonify({'error': 'Owner only'}), 403
+    if not telegram.telegram_configured():
+        return jsonify({'ok': False, 'detail': 'Save your bot token first'})
+    public = os.getenv('PUBLIC_URL', '').strip()
+    if not public:
+        return jsonify({'ok': False,
+                        'detail': 'Set your Public URL in the Webhooks tab first'})
+    secret = os.getenv('TELEGRAM_WEBHOOK_SECRET')
+    if not secret:
+        secret = secrets.token_urlsafe(24)
+        _write_env({'TELEGRAM_WEBHOOK_SECRET': secret})
+    result = telegram.set_webhook(public, secret)
+    if result.get('ok'):
+        return jsonify({'ok': True,
+                        'detail': 'Connected — text your bot to capture notes'})
+    return jsonify({'ok': False, 'detail': result.get('description', 'setWebhook failed')})
+
+
 # ── Users ────────────────────────────────────────────────
 
 @app.route('/api/users')
@@ -395,7 +472,8 @@ def api_list_users():
 def api_get_me():
     user = current_user()
     return jsonify({k: user.get(k) for k in
-                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number')})
+                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
+                     'telegram_chat_id')})
 
 
 @app.route('/api/users/me', methods=['PATCH'])
@@ -404,9 +482,11 @@ def api_update_me():
     user = db.update_user_contact(session['user_id'],
                                   email=data.get('email'),
                                   phone_number=data.get('phone_number'),
-                                  twilio_number=data.get('twilio_number'))
+                                  twilio_number=data.get('twilio_number'),
+                                  telegram_chat_id=data.get('telegram_chat_id'))
     return jsonify({k: user.get(k) for k in
-                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number')})
+                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
+                     'telegram_chat_id')})
 
 
 @app.route('/api/users', methods=['POST'])
@@ -846,6 +926,16 @@ def webhook_sms():
     return Response(twiml, mimetype='text/xml')
 
 
+@app.route('/webhooks/telegram', methods=['POST'])
+def webhook_telegram():
+    if not telegram.telegram_configured():
+        return '', 200
+    if not telegram.verify_secret(request):
+        return '', 403
+    telegram.handle_update(request.get_json(silent=True) or {})
+    return '', 200
+
+
 @app.route('/webhooks/voice/answer', methods=['POST'])
 def webhook_voice_answer():
     if not sms.twilio_configured() or not sms.validate_twilio_signature(request):
@@ -914,15 +1004,23 @@ def webhook_email():
 # ── Startup ──────────────────────────────────────────────
 
 def pick_port():
-    preferred = int(os.getenv('PORT', 3000))
-    for port in (preferred, 3001, 3002):
+    # An explicit PORT is honored exactly — never drift. Behind the Cloudflare
+    # tunnel (which forwards one fixed port) a silent fallback would point the
+    # tunnel at a dead port and serve 502s.
+    if os.getenv('PORT'):
+        return int(os.getenv('PORT'))
+    # Otherwise scan, but match the server's own SO_REUSEADDR so a port still in
+    # TIME_WAIT from a just-restarted instance doesn't fool the probe into
+    # drifting to 3001 (the exact cause of the 3000→3001 service-restart bug).
+    for port in (3000, 3001, 3002):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(('127.0.0.1', port))
                 return port
             except OSError:
                 continue
-    return preferred
+    return 3000
 
 
 if __name__ == '__main__':

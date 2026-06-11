@@ -19,6 +19,7 @@
     <button type="submit">Sign in</button>
     <p id="login-error" class="login-error" hidden>Invalid name or password</p>
   </form>
+  <div class="build-stamp">{{ app_version }}</div>
   <script>
     const saved = localStorage.getItem('remndrs-theme');
     if (saved) document.documentElement.setAttribute('data-theme', saved);

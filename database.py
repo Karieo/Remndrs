@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE,
   phone_number TEXT,
   twilio_number TEXT,
+  telegram_chat_id TEXT,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member',
   created_at TEXT NOT NULL
@@ -234,6 +235,14 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn):
+    """Add columns to existing tables (executescript only creates new ones)."""
+    cols = {r['name'] for r in conn.execute('PRAGMA table_info(users)')}
+    if 'telegram_chat_id' not in cols:
+        conn.execute('ALTER TABLE users ADD COLUMN telegram_chat_id TEXT')
 
 
 def normalize_tag(name):
@@ -274,6 +283,13 @@ def get_user_by_twilio_number(number):
     return dict(row) if row else None
 
 
+def get_user_by_telegram_chat_id(chat_id):
+    with connect() as conn:
+        row = conn.execute('SELECT * FROM users WHERE telegram_chat_id = ?',
+                           (str(chat_id),)).fetchone()
+    return dict(row) if row else None
+
+
 def get_user_by_email(email):
     with connect() as conn:
         row = conn.execute('SELECT * FROM users WHERE lower(email) = lower(?)', (email,)).fetchone()
@@ -286,10 +302,12 @@ def list_users():
     return [dict(r) for r in rows]
 
 
-def update_user_contact(user_id, email=None, phone_number=None, twilio_number=None):
+def update_user_contact(user_id, email=None, phone_number=None, twilio_number=None,
+                        telegram_chat_id=None):
     sets, params = [], []
     for column, value in (('email', email), ('phone_number', phone_number),
-                          ('twilio_number', twilio_number)):
+                          ('twilio_number', twilio_number),
+                          ('telegram_chat_id', telegram_chat_id)):
         if value is not None:
             sets.append(f'{column} = ?')
             params.append(value.strip() or None)

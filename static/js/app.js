@@ -26,14 +26,15 @@ const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 
 /* ─── Channels ─────────────────────────────────────────────── */
 const CH = {
-  sms:   { c:'#4ade80', label:'SMS',      ic:'sms'   },
-  voice: { c:'#a78bfa', label:'Voice',    ic:'voice' },
-  email: { c:'#fb923c', label:'Email',    ic:'email' },
-  cal:   { c:'#7c6fcd', label:'Calendar', ic:'cal'   },
-  app:   { c:'#c9a96e', label:'App',      ic:'app'   },
+  sms:      { c:'#4ade80', label:'SMS',      ic:'sms'   },
+  telegram: { c:'#38bdf8', label:'Telegram', ic:'send'  },
+  voice:    { c:'#a78bfa', label:'Voice',    ic:'voice' },
+  email:    { c:'#fb923c', label:'Email',    ic:'email' },
+  cal:      { c:'#7c6fcd', label:'Calendar', ic:'cal'   },
+  app:      { c:'#c9a96e', label:'App',      ic:'app'   },
 };
 const DESTS = ['sms','email','cal'];
-const noteChan = (n) => ({ sms:'sms', voice:'voice', email:'email' }[n.source] || 'app');
+const noteChan = (n) => ({ sms:'sms', voice:'voice', email:'email', telegram:'telegram' }[n.source] || 'app');
 const PALETTE = ['#4ade80','#f87171','#60a5fa','#fb923c','#a78bfa','#facc15','#f472b6','#2dd4bf','#e5e7eb'];
 const AV_COLORS = ['#4ade80','#60a5fa','#fb923c','#a78bfa','#f472b6','#2dd4bf'];
 
@@ -589,8 +590,11 @@ function setSettingsTab(tab){ settingsTab = tab; renderSettings(); }
 
 /* — Integrations — */
 const SERVICES = [
+  { id:'telegram', title:'Telegram', status:'telegram', connect:true,
+    sub:'Free, instant, no carrier registration. Make a bot with <a href="https://t.me/BotFather" target="_blank">@BotFather</a>, paste its token, Save, then Connect. Then message your bot and it tells you how to link.',
+    fields:[['TELEGRAM_BOT_TOKEN','Bot token (from @BotFather)']] },
   { id:'twilio', title:'Texts & calls', status:'sms',
-    sub:'Twilio — text or call your own number to capture. <a href="https://console.twilio.com" target="_blank">console.twilio.com</a>',
+    sub:'Twilio — text or call your own number to capture. Note: US SMS needs carrier registration. <a href="https://console.twilio.com" target="_blank">console.twilio.com</a>',
     fields:[['TWILIO_ACCOUNT_SID','Account SID'],['TWILIO_AUTH_TOKEN','Auth token'],['OWNER_PHONE_NUMBER','Your mobile number (for replies & reminders)']] },
   { id:'openai', title:'Voice transcription', status:'voice_transcription',
     sub:'OpenAI Whisper — turns voice memos and phone calls into notes.',
@@ -602,7 +606,7 @@ const SERVICES = [
     sub:'Use an <a href="https://appleid.apple.com" target="_blank">app-specific password</a> — never your real Apple ID password.',
     fields:[['CALDAV_USERNAME','Apple ID email'],['CALDAV_PASSWORD','App-specific password']] },
 ];
-const SECRET_KEYS = new Set(['TWILIO_AUTH_TOKEN','OPENAI_API_KEY','MAILGUN_API_KEY','MAILGUN_SIGNING_KEY','CALDAV_PASSWORD']);
+const SECRET_KEYS = new Set(['TWILIO_AUTH_TOKEN','OPENAI_API_KEY','MAILGUN_API_KEY','MAILGUN_SIGNING_KEY','CALDAV_PASSWORD','TELEGRAM_BOT_TOKEN']);
 
 function renderIntegrations(body){
   body.innerHTML = SERVICES.map(svc => {
@@ -622,6 +626,7 @@ function renderIntegrations(body){
       ${fields}
       <div class="set-test">
         <button class="sx" onclick="saveService('${svc.id}')">Save</button>
+        ${svc.connect ? `<button class="sx" onclick="connectService('${svc.id}')">Connect</button>` : ''}
         <button class="sx" onclick="testService('${svc.id}')">Test</button>
         <span class="set-test-result" id="test-${svc.id}"></span>
       </div>
@@ -642,6 +647,15 @@ async function saveService(serviceId){
   out.className = 'set-test-result ok';
   out.textContent = 'saved ✓';
   settingsData = await api('/api/settings').catch(()=>settingsData);
+}
+async function connectService(serviceId){
+  const out = document.getElementById('test-'+serviceId);
+  out.className = 'set-test-result';
+  out.textContent = 'connecting…';
+  const res = await api('/api/settings/'+serviceId+'/connect', { method:'POST' })
+    .catch(e=>({ok:false, detail:e.message}));
+  out.className = 'set-test-result ' + (res.ok ? 'ok' : 'bad');
+  out.textContent = res.detail || (res.ok ? 'connected ✓' : 'failed');
 }
 async function testService(serviceId){
   const out = document.getElementById('test-'+serviceId);
@@ -664,6 +678,7 @@ async function renderPeopleSettings(body){
       <div class="set-row"><div class="field" style="margin:0"><span>Email</span><input id="me-email" value="${esc(me.email||'')}" placeholder="notes@yourdomain.com"></div></div>
       <div class="set-row"><div class="field" style="margin:0"><span>Mobile</span><input id="me-phone" value="${esc(me.phone_number||'')}" placeholder="+1 555 123 4567"></div></div>
       <div class="set-row"><div class="field" style="margin:0"><span>Remndrs #</span><input id="me-twilio" value="${esc(me.twilio_number||'')}" placeholder="+1 555 000 0000 (your Twilio number)"></div></div>
+      <div class="set-row"><div class="field" style="margin:0"><span>Telegram</span><input id="me-telegram" value="${esc(me.telegram_chat_id||'')}" placeholder="chat ID — message your bot, it replies with this"></div></div>
       <div class="set-test"><button class="sx" onclick="saveMe()">Save</button><span class="set-test-result" id="me-result"></span></div>
     </div>
     <div class="set-divider"></div>
@@ -685,6 +700,7 @@ async function saveMe(){
     email: document.getElementById('me-email').value,
     phone_number: document.getElementById('me-phone').value,
     twilio_number: document.getElementById('me-twilio').value,
+    telegram_chat_id: document.getElementById('me-telegram').value,
   })}).then(()=>{ out.className='set-test-result ok'; out.textContent='saved ✓'; })
     .catch(e=>{ out.className='set-test-result bad'; out.textContent=e.message; });
 }
