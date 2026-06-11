@@ -8,6 +8,7 @@ const I = {
   cal:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
   app:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
   pin:'<path d="M9 4h6l-1 7 3 3v2H7v-2l3-3-1-7z"/><path d="M12 16v5"/>',
+  edit:'<path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/>',
   copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   send:'<path d="M22 2 11 13M22 2 15 22l-4-9-9-4z"/>',
   trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
@@ -81,10 +82,16 @@ async function loadNotes() {
 }
 
 async function refreshSharedBadge() {
-  const shared = await api('/api/notes?feed=shared').catch(() => []);
+  // Count everything the Shared feed shows: notes plus shared calendar events.
+  const [shared, allEvents] = await Promise.all([
+    api('/api/notes?feed=shared').catch(() => []),
+    api('/api/calendar/events').catch(() => []),
+  ]);
+  const count = shared.length
+    + allEvents.filter(ev => ev.feed === 'shared' && !ev.deleted).length;
   const badge = document.getElementById('sharedBadge');
-  badge.textContent = shared.length;
-  badge.hidden = !shared.length;
+  badge.textContent = count;
+  badge.hidden = !count;
 }
 
 /* ─── Render: channel rail ─────────────────────────────────── */
@@ -120,7 +127,7 @@ function noteBodyHTML(n) {
     return `<div class="todo-title">${esc(n.content.split('\n')[0])}</div>
       <div class="todo-progress-row"><span class="todo-progress-label">${done} / ${total}</span>
       <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${done/total*100}%"></div></div></div>
-      ${n.todos.map(t => `<label class="todo-item"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span></label>`).join('')}`;
+      ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span></label>`).join('')}`;
   }
   let html = `<div class="card-body">${marked.parse(n.content || '')}</div>`;
   const url = (n.content.match(/https?:\/\/[^\s)>\]]+/) || [])[0];
@@ -139,7 +146,7 @@ function cardHTML(n) {
       <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
     </div>`;
   const outgoing = activeFeed === 'shared' && shareSenderId(n) === ME.id;
-  return `<div class="card ${n.pinned?'pinned':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}">
+  return `<div class="card editable ${n.pinned?'pinned':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}" onclick="editNote('${n.id}')" title="Click to edit">
     ${header}
     ${tagsRow}
     ${noteBodyHTML(n)}
@@ -201,7 +208,7 @@ function threadHTML(n) {
   const open = openThreads.has(n.id);
   const thread = open && count
     ? `<div class="thread">${bubbles.join('')}</div>`
-    : (count ? `<button class="thread-toggle" onclick="toggleThread('${n.id}')">${svg('reply')} ${count} ${count===1?'reply':'replies'} · view</button>` : '');
+    : (count ? `<button class="thread-toggle" onclick="event.stopPropagation();toggleThread('${n.id}')">${svg('reply')} ${count} ${count===1?'reply':'replies'} · view</button>` : '');
   const who = shareSenderId(n) === ME.id
     ? (n.share ? n.share.recipient_name.split(' ')[0] : 'them')
     : (n.share ? n.share.sender_name.split(' ')[0] : (n.user_name||'them').split(' ')[0]);
@@ -210,7 +217,7 @@ function threadHTML(n) {
       <input class="reply-input" id="reply-${n.id}" placeholder="Reply to ${esc(who)}…"
         onclick="event.stopPropagation()"
         onkeydown="if(event.key==='Enter')sendReply('${n.id}')">
-      <button class="reply-send" onclick="sendReply('${n.id}')" title="Send reply">${svg('send')}</button>
+      <button class="reply-send" onclick="event.stopPropagation();sendReply('${n.id}')" title="Send reply">${svg('send')}</button>
     </div>`;
 }
 
@@ -301,7 +308,9 @@ function dropdownHTML(n) {
     return `<div class="dd-item" style="--c:${v.c}" onclick="openSheet('${n.id}','${d}')"><span class="di">${svg(v.ic)}</span> ${verb}</div>`;
   }).join('');
   const moveLabel = n.feed === 'shared' ? 'Move to Mine' : 'Move to Shared';
-  return `<div class="dropdown" id="dd-${n.id}">
+  return `<div class="dropdown" id="dd-${n.id}" onclick="event.stopPropagation()">
+    <div class="dd-item" onclick="editNote('${n.id}')"><span class="di" style="--c:var(--accent)">${svg('edit')}</span> Edit note & tags</div>
+    <div class="dd-sep"></div>
     <div class="dd-label">Send to</div>
     ${sendItems}
     <div class="dd-sep"></div>
@@ -349,7 +358,7 @@ function hydrateLinkPreviews() {
     }
     const p = previews[url];
     if (!p || !p.title) return;
-    el.outerHTML = `<a class="link-preview" href="${esc(url)}" target="_blank" rel="noopener">
+    el.outerHTML = `<a class="link-preview" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
       <div class="link-preview-img">${p.image?`<img src="${esc(p.image)}" alt="">`:svg('link')}</div>
       <div class="link-preview-text">
         ${p.site_name?`<div class="link-preview-site">${esc(p.site_name)}</div>`:''}
@@ -790,15 +799,44 @@ function dismissReminder(id){
 }
 
 /* ─── Composer ─────────────────────────────────────────────── */
-let composerMode = 'note', composerFeed = 'private';
+let composerMode = 'note', composerFeed = 'private', editingNoteId = null;
 const PLACEHOLDERS = {
   note: "What's on your mind…\n\nWrite freely. #tags are pulled out automatically.",
-  todo: "Title on the first line…\nThen one task per line.\n\n#tags work here too.",
+  todo: "Title on the first line…\nThen one task per line ([x] marks done).\n\n#tags work here too.",
 };
 
 function openComposer(){
+  editingNoteId = null;
+  document.getElementById('composerText').value = '';
   composerFeed = activeFeed;
   setComposerFeed(composerFeed);
+  setComposerMode('note');
+  document.getElementById('composer').classList.add('open');
+  updateComposerTags();
+  setTimeout(()=>document.getElementById('composerText').focus(),50);
+}
+
+function editNote(id){
+  closeAllMenus();
+  const n = notes.find(x=>x.id===id);
+  if (!n) return;
+  editingNoteId = id;
+  composerFeed = n.feed;
+  setComposerFeed(composerFeed);
+  setComposerMode(n.type === 'todo' ? 'todo' : 'note');
+
+  let text;
+  if (n.type === 'todo') {
+    const lines = [n.content.split('\n')[0]];
+    for (const t of n.todos) lines.push(`${t.checked ? '[x] ' : ''}${t.text}`);
+    text = lines.join('\n');
+  } else {
+    text = n.content;
+  }
+  if (n.tags.length) {
+    text = text.trimEnd() + '\n\n' + n.tags.map(t=>'#'+t.name.toLowerCase()).join(' ');
+  }
+  document.getElementById('composerText').value = text;
   document.getElementById('composer').classList.add('open');
   updateComposerTags();
   setTimeout(()=>document.getElementById('composerText').focus(),50);
@@ -843,20 +881,27 @@ async function saveNote(){
   const raw = document.getElementById('composerText').value.trim();
   if (!raw){ closeComposer(); return; }
   const { tags:found, clean } = extractTags(raw);
-  const body = { feed: composerFeed, tags: found, source: 'web' };
+  const body = { feed: composerFeed, tags: found };
+  if (!editingNoteId) body.source = 'web';
 
   if (composerMode==='todo'){
     const lines = clean.split('\n').map(l=>l.trim()).filter(Boolean);
     body.type = 'todo';
     body.content = lines.shift() || 'Untitled list';
-    body.todos = lines.map(l=>({ text:l, checked:false }));
+    body.todos = lines.map(l=>{
+      const m = l.match(/^\[( |x|X)\]\s*(.*)$/);
+      return m ? { text: m[2], checked: m[1].toLowerCase()==='x' }
+               : { text: l, checked: false };
+    });
   } else {
     body.type = 'note';
     body.content = clean.trim();
   }
 
   try {
-    const note = await api('/api/notes', { method:'POST', body: JSON.stringify(body) });
+    const note = editingNoteId
+      ? await api('/api/notes/'+editingNoteId, { method:'PATCH', body: JSON.stringify(body) })
+      : await api('/api/notes', { method:'POST', body: JSON.stringify(body) });
     if (document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
@@ -868,8 +913,10 @@ async function saveNote(){
     document.getElementById('remindOn').checked = false;
     document.getElementById('remindAt').hidden = true;
     document.getElementById('remindAt').value = '';
+    const wasEditing = !!editingNoteId;
+    editingNoteId = null;
     closeComposer();
-    toast(`${svg(composerMode==='todo'?'check':'app',13)} ${composerMode==='todo'?'List':'Note'} saved`);
+    toast(`${svg(composerMode==='todo'?'check':'app',13)} ${wasEditing?'Updated':(composerMode==='todo'?'List saved':'Note saved')}`);
     loadTags(); loadNotes(); refreshSharedBadge();
   } catch (e) { toast(esc(e.message)); }
 }

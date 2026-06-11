@@ -82,6 +82,7 @@ struct FeedView: View {
     var lockedFeed: String?
     @State private var sendTarget: Note?
     @State private var shareTarget: Note?
+    @State private var editTarget: Note?
     @State private var people: [Person] = []
     @State private var sharedCount = 0
 
@@ -131,6 +132,10 @@ struct FeedView: View {
                 .presentationDetents([.height(420)])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Theme.surface)
+        }
+        .sheet(item: $editTarget) { note in
+            ComposerView(editingNote: note)
+                .onDisappear { Task { await model.load(api: session.api) } }
         }
     }
 
@@ -194,6 +199,7 @@ struct FeedView: View {
                             note: note,
                             myUserID: myUserID,
                             showSender: model.feed == "shared",
+                            onEdit: { editTarget = note },
                             onSend: { sendTarget = note },
                             onShareWith: { shareTarget = note },
                             onDelete: { Task { await delete(note) } },
@@ -229,7 +235,11 @@ struct FeedView: View {
     }
 
     private func refreshSharedCount() async {
-        sharedCount = (try? await session.api?.notes(feed: "shared").count) ?? 0
+        // Count what the Shared feed shows: notes plus shared calendar events.
+        let notes = (try? await session.api?.notes(feed: "shared").count) ?? 0
+        let events = ((try? await session.api?.calendarEvents()) ?? [])
+            .filter { $0.feed == "shared" && !$0.isOrphaned }.count
+        sharedCount = notes + events
     }
 
     private func share(_ note: Note, with person: Person) async {
