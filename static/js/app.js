@@ -66,6 +66,9 @@ const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 // Markdown → HTML, sanitized. Note content arrives from email/SMS/Telegram and
 // from other users via the shared feed, so raw HTML in it must never execute.
 // If the DOMPurify CDN didn't load, fall back to escaped plain text.
+// breaks:true so a single Enter renders as a line break — people type notes
+// line by line and expect those returns honored, not collapsed Markdown-style.
+if (window.marked) marked.setOptions({ breaks: true, gfm: true });
 const md = (s) => window.DOMPurify
   ? DOMPurify.sanitize(marked.parse(s || ''))
   : `<p>${esc(s)}</p>`;
