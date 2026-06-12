@@ -132,6 +132,13 @@
       <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked"> ⏰ remind me</label>
       <input type="datetime-local" id="remindAt" hidden>
     </div>
+    <div class="composer-attach">
+      <input type="file" id="composerFilePicker" hidden multiple
+             accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.pptx,.m4a,.mp3,.wav,.ogg,.mp4,.mov,.zip"
+             onchange="addComposerFiles(this.files); this.value=''">
+      <button type="button" class="composer-attach-btn" onclick="document.getElementById('composerFilePicker').click()" title="Attach images or files (or paste an image)"></button>
+      <span class="composer-attach-list" id="composerFileList"></span>
+    </div>
     <div class="composer-footer">
       <span class="composer-hint">⌘↵ save · esc close</span>
       <div class="composer-actions">
