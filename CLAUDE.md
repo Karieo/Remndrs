@@ -46,6 +46,7 @@ The SQLite DB lives at `data/remndrs.db` (gitignored); delete it to reset. On fi
 - **Tags are global, uppercase, deduplicated**, with user-assigned hex colors (`DEFAULT_PALETTE` in database.py, assigned round-robin for auto-created tags). A note's first tag drives its card's left-border color.
 - **Calendar sync never writes user content to CalDAV.** Attached notes/tags live only in SQLite and the `.md` stub; stub frontmatter is regenerated each sync while content below the `NOTES_MARKER` comment is preserved. Events deleted in Apple Calendar are marked orphaned, never removed.
 - Visibility rule used everywhere: a user sees their own `feed='private'` rows plus anyone's `feed='shared'` rows.
+- **Web and iOS stay in feature parity.** Any change to note fields, feed views, or card actions must land in both clients in the same PR: the API/JSON shape (`ios/Shared/Models.swift` — new fields decode as optionals so the app survives older servers), the feed views (`ios/Remndrs/Views/FeedView.swift`), and the card context menu (`ios/Remndrs/Views/NoteCardView.swift`). Web-only presentation (CSS, markdown rendering) is exempt.
 
 ## Frontend Note
 
