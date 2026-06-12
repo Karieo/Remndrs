@@ -364,6 +364,12 @@ def delete_api_token_by_hash(token_hash):
         conn.execute('DELETE FROM api_tokens WHERE token_hash = ?', (token_hash,))
 
 
+def delete_api_tokens_by_device(user_id, device_name):
+    with connect() as conn:
+        conn.execute('DELETE FROM api_tokens WHERE user_id = ? AND device_name = ?',
+                     (user_id, device_name))
+
+
 # ── Tags ─────────────────────────────────────────────────
 
 def list_tags():

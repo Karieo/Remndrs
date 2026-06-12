@@ -257,6 +257,20 @@ The email is saved as a note (tagged `#REMINDER`) and a linked reminder
 fires via web banner, SMS, and the iOS app. If outbound email is configured
 you get a confirmation reply with the parsed time.
 
+### Claude
+
+Talk to Claude anywhere — claude.ai, the mobile apps, Claude Code — and it
+can save notes, set reminders, and search what you've already captured.
+Remndrs exposes a small [MCP](https://modelcontextprotocol.io) server at
+`/mcp`; setup is one click ([details](#claude-mcp-connector)).
+
+Say things like *"save a note in Remndrs: pick up the primer #wh40k"*,
+*"remind me tomorrow at 9 to call the vet"*, or *"what was that Warhammer
+video I saved?"*. Notes arrive with the Claude channel chip; `#hashtags`
+become tags; `#SHARED` (or asking Claude to share it) routes to the shared
+feed. Reminders fire exactly like ones set in the app — web banner, SMS,
+iOS notification.
+
 ### iPhone app
 
 A native SwiftUI companion in [`ios/`](ios/README.md) — quick capture, the
@@ -406,6 +420,30 @@ password:
 
 Then in ⚙ → Calendars, enable the ones you want and choose Private or Shared
 for each. Sync runs every 10 minutes (or use "Sync now").
+
+### Claude (MCP connector)
+
+Needs your **Public URL** set first (⚙ → Webhooks — your Cloudflare tunnel
+address), since claude.ai reaches the server from outside.
+
+1. ⚙ → Integrations → **Claude** → **Connect**. Copy the URL it shows —
+   it's displayed only once (the token inside is stored hashed).
+2. In [claude.ai → Settings → Connectors](https://claude.ai/settings/connectors)
+   → **Add custom connector**, paste the URL. Claude can now save notes, set
+   reminders, and search your notes from any conversation.
+3. For **Claude Code** instead, mint the URL the same way, take the token
+   from the end of it, and run:
+
+   ```bash
+   claude mcp add --transport http remndrs https://YOUR-URL/mcp \
+       --header "Authorization: Bearer THE-TOKEN"
+   ```
+
+Pressing Connect again **revokes the old URL** and mints a fresh one — do
+that any time you think the URL leaked (it's a bearer secret; treat it like
+a password). Tools exposed: `add_note`, `add_reminder`, `search_notes`,
+`recent_notes`, `get_notes_by_tag` — Claude can read your notes through the
+last three, so only connect accounts you trust with that.
 
 ---
 

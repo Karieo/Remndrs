@@ -23,6 +23,7 @@ const I = {
   moon:'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
   archive:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
   clip:'<path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
 };
 const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
@@ -33,10 +34,11 @@ const CH = {
   voice:    { c:'#a78bfa', label:'Voice',    ic:'voice' },
   email:    { c:'#fb923c', label:'Email',    ic:'email' },
   cal:      { c:'#7c6fcd', label:'Calendar', ic:'cal'   },
+  claude:   { c:'#d97757', label:'Claude',   ic:'spark' },
   app:      { c:'#c9a96e', label:'App',      ic:'app'   },
 };
 const DESTS = ['sms','email','cal'];
-const noteChan = (n) => ({ sms:'sms', voice:'voice', email:'email', telegram:'telegram' }[n.source] || 'app');
+const noteChan = (n) => ({ sms:'sms', voice:'voice', email:'email', telegram:'telegram', claude:'claude' }[n.source] || 'app');
 const PALETTE = ['#4ade80','#f87171','#60a5fa','#fb923c','#a78bfa','#facc15','#f472b6','#2dd4bf','#e5e7eb'];
 const AV_COLORS = ['#4ade80','#60a5fa','#fb923c','#a78bfa','#f472b6','#2dd4bf'];
 
@@ -661,6 +663,9 @@ function setSettingsTab(tab){ settingsTab = tab; renderSettings(); }
 
 /* — Integrations — */
 const SERVICES = [
+  { id:'claude', title:'Claude', status:'claude', connect:true,
+    sub:'Talk to Claude anywhere and it can save notes, set reminders, and search your notes. Set your Public URL (Webhooks tab), click Connect, then paste the URL into <a href="https://claude.ai/settings/connectors" target="_blank">claude.ai → Settings → Connectors</a> → Add custom connector. Reconnecting revokes the old URL.',
+    fields:[] },
   { id:'telegram', title:'Telegram', status:'telegram', connect:true,
     sub:'Free, instant, no carrier registration. Make a bot with <a href="https://t.me/BotFather" target="_blank">@BotFather</a>, paste its token, Save, then Connect. Then message your bot and it tells you how to link.',
     fields:[['TELEGRAM_BOT_TOKEN','Bot token (from @BotFather)']] },
@@ -696,7 +701,7 @@ function renderIntegrations(body){
       <div class="set-sub">${svc.sub}</div>
       ${fields}
       <div class="set-test">
-        <button class="sx" onclick="saveService('${svc.id}')">Save</button>
+        ${svc.fields.length ? `<button class="sx" onclick="saveService('${svc.id}')">Save</button>` : ''}
         ${svc.connect ? `<button class="sx" onclick="connectService('${svc.id}')">Connect</button>` : ''}
         <button class="sx" onclick="testService('${svc.id}')">Test</button>
         <span class="set-test-result" id="test-${svc.id}"></span>
@@ -727,6 +732,17 @@ async function connectService(serviceId){
     .catch(e=>({ok:false, detail:e.message}));
   out.className = 'set-test-result ' + (res.ok ? 'ok' : 'bad');
   out.textContent = res.detail || (res.ok ? 'connected ✓' : 'failed');
+  if (res.ok && res.url){
+    // The token inside is stored hashed server-side — this is the one chance
+    // to copy the URL, so surface it as a copyable row right here.
+    const row = document.createElement('div');
+    row.className = 'set-row connect-url-row';
+    row.innerHTML = `<div class="field" style="margin:0">
+        <input value="${esc(res.url)}" readonly onclick="this.select()">
+      </div><button class="sx" onclick="copyText('${esc(res.url)}')">Copy</button>`;
+    out.closest('.set-section').querySelector('.connect-url-row')?.remove();
+    out.closest('.set-test').before(row);
+  }
 }
 async function testService(serviceId){
   const out = document.getElementById('test-'+serviceId);
