@@ -82,6 +82,7 @@ def _frontmatter(note, user_name):
         f'tag_colors: {{{tag_colors}}}\n'
         f'source: {note["source"]}\n'
         f'pinned: {"true" if note["pinned"] else "false"}\n'
+        f'archived: {"true" if note.get("archived") else "false"}\n'
         f'created: {note["created_at"]}\n'
         f'updated: {note["updated_at"]}\n'
         '---\n'

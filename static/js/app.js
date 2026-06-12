@@ -21,6 +21,7 @@ const I = {
   bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/>',
   moon:'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  archive:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
 };
 const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
@@ -85,7 +86,9 @@ async function loadNotes() {
   const params = new URLSearchParams({ feed: activeFeed });
   if (search) params.set('search', search);
   notes = await api('/api/notes?' + params);
-  events = search ? [] : (await api('/api/calendar/events').catch(() => []));
+  // Calendar events have no archived state — keep the archived view to notes.
+  events = (search || activeFeed === 'archived') ? []
+    : (await api('/api/calendar/events').catch(() => []));
   renderCards();
 }
 
@@ -354,6 +357,7 @@ function dropdownHTML(n) {
     <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
     <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
+    <div class="dd-item" onclick="archiveNote('${n.id}', ${n.archived?'false':'true'})"><span class="di">${svg('archive')}</span> ${n.archived?'Restore':'Archive'}</div>
     <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
   </div>`;
 }
@@ -381,7 +385,7 @@ function renderCards() {
     ...visibleEvents().map(ev => ({ pinned: false, at: ev.start_at, html: () => eventCardHTML(ev) })),
   ].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || String(b.at).localeCompare(String(a.at)));
   grid.innerHTML = items.length ? items.map(i => i.html()).join('')
-    : `<div class="grid-empty">No ${activeFeed==='shared'?'shared ':''}notes match.</div>`;
+    : `<div class="grid-empty">No ${activeFeed==='archived'?'archived ':activeFeed==='shared'?'shared ':''}notes match.</div>`;
   renderChanRail();   // notes/events just changed — a channel may now (dis)appear
   hydrateLinkPreviews();
   visibleEvents().forEach(ev => loadCalNotes(ev.id));
@@ -432,7 +436,10 @@ function setFeed(f){
   activeFeed = f;
   document.getElementById('feedMine').classList.toggle('active', f==='private');
   document.getElementById('feedShared').classList.toggle('active', f==='shared');
-  document.getElementById('search').placeholder = f==='shared' ? 'Search shared notes…' : 'Search by text or date…';
+  document.getElementById('feedArchived').classList.toggle('active', f==='archived');
+  document.getElementById('search').placeholder =
+    f==='archived' ? 'Search archived notes…' :
+    f==='shared'   ? 'Search shared notes…' : 'Search by text or date…';
   closeAllMenus();
   loadNotes();
 }
@@ -547,6 +554,12 @@ async function moveFeed(id){
   const to = n.feed === 'shared' ? 'private' : 'shared';
   await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ feed: to }) });
   toast(`${svg('reply',13)} Moved to ${to==='shared'?'Shared':'Mine'}`);
+  loadNotes(); refreshSharedBadge();
+}
+async function archiveNote(id, archived){
+  closeAllMenus();
+  await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ archived }) });
+  toast(`${svg('archive',13)} ${archived ? 'Archived' : 'Restored'}`);
   loadNotes(); refreshSharedBadge();
 }
 async function deleteNote(id){
