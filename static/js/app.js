@@ -22,6 +22,7 @@ const I = {
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/>',
   moon:'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
   archive:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
+  clip:'<path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
 };
 const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
@@ -886,6 +887,7 @@ function dismissReminder(id){
 
 /* ─── Composer ─────────────────────────────────────────────── */
 let composerMode = 'note', composerFeed = 'private', editingNoteId = null;
+let composerAttachments = [];
 const PLACEHOLDERS = {
   note: "What's on your mind…\n\nWrite freely. #tags are pulled out automatically.",
   todo: "Title on the first line…\nThen one task per line ([x] marks done).\n\n#tags work here too.",
@@ -897,9 +899,51 @@ function openComposer(){
   composerFeed = activeFeed;
   setComposerFeed(composerFeed);
   setComposerMode('note');
+  composerAttachments = [];
+  renderComposerFiles();
   document.getElementById('composer').classList.add('open');
   updateComposerTags();
   setTimeout(()=>document.getElementById('composerText').focus(),50);
+}
+
+/* ─── Composer attachments ─────────────────────────────────── */
+function addComposerFiles(fileList){
+  for (const f of fileList) composerAttachments.push(f);
+  renderComposerFiles();
+}
+function removeComposerFile(i){
+  composerAttachments.splice(i, 1);
+  renderComposerFiles();
+}
+function renderComposerFiles(){
+  document.getElementById('composerFileList').innerHTML = composerAttachments.map((f,i)=>
+    `<span class="attach-chip">${esc(f.name)}<button type="button" title="Remove" onclick="removeComposerFile(${i})">✕</button></span>`).join('');
+}
+async function uploadAttachment(noteId, file){
+  // Multipart, so no JSON header — can't reuse api().
+  const fd = new FormData();
+  fd.append('note_id', noteId);
+  fd.append('file', file, file.name || 'pasted-image.png');
+  const res = await fetch('/api/attachments', { method:'POST', body: fd });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data;
+}
+// Same flow as the iOS composer: save the note first, upload each file, then
+// append the returned markdown links so the images render in the card.
+async function attachComposerFiles(note){
+  if (!composerAttachments.length) return;
+  const links = [];
+  for (const f of composerAttachments){
+    try { links.push((await uploadAttachment(note.id, f)).markdown); }
+    catch (e) { toast(esc(e.message)); }
+  }
+  composerAttachments = [];
+  renderComposerFiles();
+  if (links.length){
+    const content = (note.content ? note.content + '\n\n' : '') + links.join('\n');
+    await api('/api/notes/'+note.id, { method:'PATCH', body: JSON.stringify({ content }) });
+  }
 }
 
 function editNote(id){
@@ -923,6 +967,8 @@ function editNote(id){
     text = text.trimEnd() + '\n\n' + n.tags.map(t=>'#'+t.name.toLowerCase()).join(' ');
   }
   document.getElementById('composerText').value = text;
+  composerAttachments = [];
+  renderComposerFiles();
   document.getElementById('composer').classList.add('open');
   updateComposerTags();
   setTimeout(()=>document.getElementById('composerText').focus(),50);
@@ -990,7 +1036,8 @@ function addComposerTag(name){
 
 async function saveNote(){
   const raw = document.getElementById('composerText').value.trim();
-  if (!raw){ closeComposer(); return; }
+  // No text but a queued file is still a note — an image-only capture.
+  if (!raw && !composerAttachments.length){ closeComposer(); return; }
   const { tags:found, clean } = extractTags(raw);
   const body = { feed: composerFeed, tags: found };
   if (!editingNoteId) body.source = 'web';
@@ -1013,6 +1060,7 @@ async function saveNote(){
     const note = editingNoteId
       ? await api('/api/notes/'+editingNoteId, { method:'PATCH', body: JSON.stringify(body) })
       : await api('/api/notes', { method:'POST', body: JSON.stringify(body) });
+    await attachComposerFiles(note);
     if (document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
@@ -1073,6 +1121,12 @@ document.addEventListener('keydown', e=>{
 /* ─── Init ─────────────────────────────────────────────────── */
 const savedTheme = localStorage.getItem('remndrs-theme');
 if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+document.querySelector('.composer-attach-btn').innerHTML = `${svg('clip',12)} Attach`;
+// Pasting an image into the composer (e.g. a screenshot) queues it as a file.
+document.getElementById('composerText').addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length){ e.preventDefault(); addComposerFiles(files); }
+});
 renderChanRail();
 setThemeIcon();
 loadChannelStatus();
