@@ -8,6 +8,7 @@ struct NoteCardView: View {
     var onEdit: (() -> Void)?
     var onSend: (() -> Void)?
     var onShareWith: (() -> Void)?
+    var onArchive: (() -> Void)?
     var onDelete: (() -> Void)?
     var onToggleTodo: ((TodoItem) -> Void)?
     var onReply: ((String) -> Void)?
@@ -81,6 +82,12 @@ struct NoteCardView: View {
             if let onShareWith {
                 Button { onShareWith() } label: {
                     Label("Share with…", systemImage: "person.crop.circle.badge.plus")
+                }
+            }
+            if let onArchive {
+                Button { onArchive() } label: {
+                    Label(note.isArchived ? "Restore" : "Archive",
+                          systemImage: note.isArchived ? "tray.and.arrow.up" : "archivebox")
                 }
             }
             if let onDelete {

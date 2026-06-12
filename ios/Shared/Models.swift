@@ -9,6 +9,8 @@ struct Note: Codable, Identifiable, Hashable {
     var content: String
     let source: String
     var pinned: Bool
+    // Optional so decoding still works against servers from before archiving.
+    var archived: Bool?
     let createdAt: String
     let updatedAt: String
     var tags: [TagRef]
@@ -18,7 +20,7 @@ struct Note: Codable, Identifiable, Hashable {
     var replies: [Reply]
 
     enum CodingKeys: String, CodingKey {
-        case id, feed, type, content, source, pinned, tags, todos, attachments
+        case id, feed, type, content, source, pinned, archived, tags, todos, attachments
         case share, replies
         case userId = "user_id"
         case userName = "user_name"
@@ -27,6 +29,7 @@ struct Note: Codable, Identifiable, Hashable {
     }
 
     var createdDate: Date? { RemndrsDate.parse(createdAt) }
+    var isArchived: Bool { archived ?? false }
 }
 
 struct TagRef: Codable, Hashable {
