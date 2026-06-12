@@ -63,6 +63,13 @@ async function api(path, opts = {}) {
 
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// Markdown → HTML, sanitized. Note content arrives from email/SMS/Telegram and
+// from other users via the shared feed, so raw HTML in it must never execute.
+// If the DOMPurify CDN didn't load, fall back to escaped plain text.
+const md = (s) => window.DOMPurify
+  ? DOMPurify.sanitize(marked.parse(s || ''))
+  : `<p>${esc(s)}</p>`;
+
 function fmtDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -158,7 +165,7 @@ function noteBodyHTML(n) {
       <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${done/total*100}%"></div></div></div>
       ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span></label>`).join('')}`;
   }
-  let html = `<div class="card-body">${marked.parse(n.content || '')}</div>`;
+  let html = `<div class="card-body">${md(n.content)}</div>`;
   const url = (n.content.match(/https?:\/\/[^\s)>\]]+/) || [])[0];
   if (url) html += `<span data-preview-url="${esc(url)}"></span>`;
   return html;
@@ -384,9 +391,12 @@ function hydrateLinkPreviews() {
   document.querySelectorAll('[data-preview-url]').forEach(async (el) => {
     const url = el.dataset.previewUrl;
     if (!previews[url]) {
-      previews[url] = await fetch('/api/preview?url='+encodeURIComponent(url)).then(r=>r.json()).catch(()=>({}));
+      // Cache the promise, not the result: re-renders while a fetch is in
+      // flight (SSE refreshes, several cards with the same link) would
+      // otherwise each fire their own request for the same URL.
+      previews[url] = fetch('/api/preview?url='+encodeURIComponent(url)).then(r=>r.json()).catch(()=>({}));
     }
-    const p = previews[url];
+    const p = await previews[url];
     if (!p || !p.title) return;
     el.outerHTML = `<a class="link-preview" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
       <div class="link-preview-img">${p.image?`<img src="${esc(p.image)}" alt="">`:svg('link')}</div>
@@ -403,7 +413,7 @@ async function loadCalNotes(eventId) {
   if (!wrap) return;
   const full = await api('/api/calendar/events/'+eventId).catch(() => null);
   if (!full || !full.notes || !full.notes.length) return;
-  wrap.innerHTML = full.notes.map(n => `<div class="cal-note card-body">${marked.parse(n.content||'')}</div>`).join('');
+  wrap.innerHTML = full.notes.map(n => `<div class="cal-note card-body">${md(n.content)}</div>`).join('');
 }
 function openCalNote(id){ openCalNotes.add(id); renderCards(); setTimeout(()=>document.getElementById('calIn-'+id)?.focus(),50); }
 async function saveCalNote(id) {

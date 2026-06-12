@@ -516,16 +516,65 @@ def replace_todos(note_id, todos):
                  1 if todo.get('checked') else 0, i))
 
 
-def _fts_query(search):
-    tokens = re.findall(r'\w+', search)
-    return ' '.join(f'"{t}"' for t in tokens) if tokens else None
-
-
 def _like_term(term):
     """Wrap a search word as a case-insensitive LIKE pattern, escaping the
     SQL wildcards so a user typing % or _ searches for those literal chars."""
     escaped = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
     return f'%{escaped}%'
+
+
+_MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june',
+                'july', 'august', 'september', 'october', 'november', 'december']
+
+
+def _date_pattern(query):
+    """If the whole query reads as a date, return a LIKE pattern for
+    created_at (ISO). '_' matches any char in LIKE, so a date with no year
+    ('Jun 11') matches that day in every year. Returns None for non-dates —
+    including impossible ones like 13/5, which stay plain text searches."""
+    def pattern(year, month, day):
+        if not (1 <= month <= 12 and (day is None or 1 <= day <= 31)):
+            return None
+        return (f'{year}-{month:02d}-{day:02d}%' if day is not None
+                else f'{year}-{month:02d}-%')
+
+    q = query.strip().lower()
+    m = re.fullmatch(r'(\d{4})-(\d{1,2})(?:-(\d{1,2}))?', q)        # 2026-06[-11]
+    if m:
+        return pattern(m.group(1), int(m.group(2)),
+                       int(m.group(3)) if m.group(3) else None)
+    m = re.fullmatch(r'([a-z]{3,9})\.? (\d{1,2})(?:,? (\d{4}))?', q)  # jun 11[, 2026]
+    if m:
+        months = [i for i, name in enumerate(_MONTH_NAMES, 1)
+                  if name.startswith(m.group(1))]
+        if len(months) == 1:
+            return pattern(m.group(3) or '____', months[0], int(m.group(2)))
+    m = re.fullmatch(r'(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?', q)        # 6/11[/26]
+    if m:
+        year = m.group(3) or '____'
+        if len(year) == 2:
+            year = '20' + year
+        return pattern(year, int(m.group(1)), int(m.group(2)))
+    return None
+
+
+def _apply_search(where, params, search):
+    """Append WHERE clauses for a free-text search: a date-shaped query
+    matches the note's created day; otherwise every word must appear as a
+    substring of the body or of a todo item (partial typing works, unlike
+    the whole-word FTS this replaced)."""
+    date_pattern = _date_pattern(search)
+    if date_pattern:
+        where.append('n.created_at LIKE ?')
+        params.append(date_pattern)
+        return
+    for term in re.findall(r'\S+', search):
+        like = _like_term(term)
+        where.append(
+            "(n.content LIKE ? ESCAPE '\\' OR EXISTS ("
+            "SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id "
+            "AND ti.text LIKE ? ESCAPE '\\'))")
+        params.extend([like, like])
 
 
 def list_notes(user_id, tag=None, search=None, source=None, feed=None):
@@ -545,16 +594,7 @@ def list_notes(user_id, tag=None, search=None, source=None, feed=None):
         where.append('n.feed = ?')
         params.append(feed)
     if search:
-        # Substring match on note body OR any of its todo items, AND-ing the
-        # search words so partial typing ("war" → Warhammer) and to-do text
-        # both turn up — FTS only indexed whole words of the body.
-        for term in re.findall(r'\S+', search):
-            like = _like_term(term)
-            where.append(
-                "(n.content LIKE ? ESCAPE '\\' OR EXISTS ("
-                "SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id "
-                "AND ti.text LIKE ? ESCAPE '\\'))")
-            params.extend([like, like])
+        _apply_search(where, params, search)
 
     sql += 'WHERE (' + ') AND ('.join(where) + ') '
     sql += 'ORDER BY n.pinned DESC, n.created_at DESC'
@@ -564,15 +604,15 @@ def list_notes(user_id, tag=None, search=None, source=None, feed=None):
 
 
 def search_user_notes(user_id, search, limit=3):
-    fts = _fts_query(search)
-    if not fts:
+    """SMS/Telegram FIND — same matching rules as the web search."""
+    if not (search or '').strip():
         return []
+    where, params = ['n.user_id = ?'], [user_id]
+    _apply_search(where, params, search)
+    sql = ('SELECT n.* FROM notes n WHERE (' + ') AND ('.join(where) + ') '
+           'ORDER BY n.created_at DESC LIMIT ?')
     with connect() as conn:
-        rows = conn.execute(
-            'SELECT n.* FROM notes n JOIN notes_fts f ON f.rowid = n.rowid '
-            'WHERE n.user_id = ? AND notes_fts MATCH ? '
-            'ORDER BY n.created_at DESC LIMIT ?',
-            (user_id, fts, limit)).fetchall()
+        rows = conn.execute(sql, params + [limit]).fetchall()
     return [note_to_dict(r) for r in rows]
 
 
