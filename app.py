@@ -271,11 +271,16 @@ def _persist_note_file(note):
 
 @app.route('/api/notes')
 def api_list_notes():
+    # feed=archived is the archived view: all archived notes the user can
+    # see, both feeds together. Every other feed value excludes archived.
+    feed = request.args.get('feed')
+    archived = feed == 'archived'
     notes = db.list_notes(session['user_id'],
                           tag=request.args.get('tag'),
                           search=request.args.get('search'),
                           source=request.args.get('source'),
-                          feed=request.args.get('feed'))
+                          feed=None if archived else feed,
+                          archived=archived)
     return jsonify(notes)
 
 
@@ -311,7 +316,7 @@ def api_update_note(note_id):
         return jsonify({'error': 'Not found'}), 404
     data = request.get_json(silent=True) or {}
 
-    fields = {k: data[k] for k in ('content', 'feed', 'type', 'pinned')
+    fields = {k: data[k] for k in ('content', 'feed', 'type', 'pinned', 'archived')
               if k in data}
     note = db.update_note(note_id, **fields) if fields else existing
     if 'tags' in data:

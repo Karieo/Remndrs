@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS notes (
   content TEXT NOT NULL DEFAULT '',
   source TEXT NOT NULL DEFAULT 'web',
   pinned INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   filename TEXT,
@@ -243,6 +244,9 @@ def _migrate(conn):
     cols = {r['name'] for r in conn.execute('PRAGMA table_info(users)')}
     if 'telegram_chat_id' not in cols:
         conn.execute('ALTER TABLE users ADD COLUMN telegram_chat_id TEXT')
+    note_cols = {r['name'] for r in conn.execute('PRAGMA table_info(notes)')}
+    if 'archived' not in note_cols:
+        conn.execute('ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
 
 
 def normalize_tag(name):
@@ -441,6 +445,7 @@ def set_note_tags(note_id, tag_names, created_by=None):
 def note_to_dict(row):
     note = dict(row)
     note['pinned'] = bool(note['pinned'])
+    note['archived'] = bool(note['archived'])
     note['tags'] = get_note_tags(note['id'])
     with connect() as conn:
         todos = conn.execute(
@@ -481,13 +486,13 @@ def get_note(note_id):
 
 
 def update_note(note_id, **fields):
-    allowed = {'content', 'feed', 'type', 'pinned', 'filename', 'source'}
+    allowed = {'content', 'feed', 'type', 'pinned', 'archived', 'filename', 'source'}
+    bool_cols = {'pinned', 'archived'}
     sets, params = [], []
     for key, value in fields.items():
         if key in allowed:
             sets.append(f'{key} = ?')
-            params.append(1 if (key == 'pinned' and value) else
-                          (0 if key == 'pinned' else value))
+            params.append((1 if value else 0) if key in bool_cols else value)
     sets.append('updated_at = ?')
     params.append(now_iso())
     params.append(note_id)
@@ -577,10 +582,16 @@ def _apply_search(where, params, search):
         params.extend([like, like])
 
 
-def list_notes(user_id, tag=None, search=None, source=None, feed=None):
+def list_notes(user_id, tag=None, search=None, source=None, feed=None,
+               archived=False):
     sql = ('SELECT DISTINCT n.* FROM notes n ')
     where = ["(n.user_id = ? AND n.feed = 'private') OR n.feed = 'shared'"]
     params = [user_id]
+
+    # The archived view shows only archived notes the user can see (their
+    # private + visible shared, both feeds together); every other view
+    # excludes archived notes entirely.
+    where.append('n.archived = 1' if archived else 'n.archived = 0')
 
     if tag:
         sql += ('JOIN note_tags nt ON nt.note_id = n.id '
@@ -607,7 +618,7 @@ def search_user_notes(user_id, search, limit=3):
     """SMS/Telegram FIND — same matching rules as the web search."""
     if not (search or '').strip():
         return []
-    where, params = ['n.user_id = ?'], [user_id]
+    where, params = ['n.user_id = ?', 'n.archived = 0'], [user_id]
     _apply_search(where, params, search)
     sql = ('SELECT n.* FROM notes n WHERE (' + ') AND ('.join(where) + ') '
            'ORDER BY n.created_at DESC LIMIT ?')
@@ -622,7 +633,7 @@ def notes_by_tag(user_id, tag, limit=3):
             'SELECT n.* FROM notes n '
             'JOIN note_tags nt ON nt.note_id = n.id '
             'JOIN tags t ON t.id = nt.tag_id '
-            'WHERE n.user_id = ? AND t.name = ? '
+            'WHERE n.user_id = ? AND t.name = ? AND n.archived = 0 '
             'ORDER BY n.created_at DESC LIMIT ?',
             (user_id, normalize_tag(tag), limit)).fetchall()
     return [note_to_dict(r) for r in rows]
@@ -631,7 +642,8 @@ def notes_by_tag(user_id, tag, limit=3):
 def recent_notes(user_id, limit=5):
     with connect() as conn:
         rows = conn.execute(
-            'SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+            'SELECT * FROM notes WHERE user_id = ? AND archived = 0 '
+            'ORDER BY created_at DESC LIMIT ?',
             (user_id, limit)).fetchall()
     return [note_to_dict(r) for r in rows]
 
