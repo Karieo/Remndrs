@@ -30,6 +30,7 @@ import reminders
 import sms
 import sse
 import telegram
+import mcp_server
 import voice
 
 logging.basicConfig(level=logging.INFO,
@@ -91,6 +92,7 @@ _GIT_SHA, _GIT_DATE = _git_build()
 VERSION_LABEL = (f'v{VERSION} · {_GIT_SHA} · {_GIT_DATE}'
                  if _GIT_SHA else f'v{VERSION}')
 log.info('Remndrs %s starting', VERSION_LABEL)
+mcp_server.SERVER_VERSION = VERSION
 
 
 @app.context_processor
@@ -119,7 +121,7 @@ seed_owner()
 # ── Auth ─────────────────────────────────────────────────
 
 PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/api/version',
-                '/webhooks/', '/static/')
+                '/webhooks/', '/static/', '/mcp')
 
 
 def _hash_token(token):
@@ -407,8 +409,17 @@ def api_get_settings():
         'email_out': email_inbound.mailgun_send_configured(),
         'calendar': bool(os.getenv('CALDAV_USERNAME') and os.getenv('CALDAV_PASSWORD')),
         'telegram': telegram.telegram_configured(),
+        'claude': _claude_connected(session['user_id']),
     }
     return jsonify(values)
+
+
+CLAUDE_DEVICE_NAME = 'Claude (MCP)'
+
+
+def _claude_connected(user_id):
+    return any(t['device_name'] == CLAUDE_DEVICE_NAME
+               for t in db.list_api_tokens(user_id))
 
 
 @app.route('/api/integrations/status')
@@ -422,6 +433,7 @@ def api_integrations_status():
         'voice': voice.openai_configured(),
         'email': email_inbound.mailgun_configured(),
         'cal': bool(os.getenv('CALDAV_USERNAME') and os.getenv('CALDAV_PASSWORD')),
+        'claude': _claude_connected(session['user_id']),
     })
 
 
@@ -493,6 +505,15 @@ def api_test_settings(service):
             return jsonify({'ok': False,
                             'detail': 'Connected but no calendars — check the app-specific password'})
 
+        if service == 'claude':
+            if not os.getenv('PUBLIC_URL', '').strip():
+                return jsonify({'ok': False,
+                                'detail': 'Set your Public URL in the Webhooks tab first'})
+            if _claude_connected(session['user_id']):
+                return jsonify({'ok': True,
+                                'detail': 'Connector token active — endpoint ready'})
+            return jsonify({'ok': False, 'detail': 'No token yet — click Connect'})
+
         return jsonify({'error': 'Unknown service'}), 400
     except Exception as e:
         return jsonify({'ok': False, 'detail': str(e)[:200]})
@@ -518,6 +539,28 @@ def api_telegram_connect():
         return jsonify({'ok': True,
                         'detail': 'Connected — text your bot to capture notes'})
     return jsonify({'ok': False, 'detail': result.get('description', 'setWebhook failed')})
+
+
+@app.route('/api/settings/claude/connect', methods=['POST'])
+def api_claude_connect():
+    """Mint (or rotate) the Claude MCP capability URL. The raw token is stored
+    hashed, so the URL can only be shown once — reconnecting revokes the old
+    token and mints a fresh one. Owner-only v1, like the whole Integrations tab."""
+    user = _require_owner()
+    if not user:
+        return jsonify({'error': 'Owner only'}), 403
+    public = os.getenv('PUBLIC_URL', '').strip().rstrip('/')
+    if not public:
+        return jsonify({'ok': False,
+                        'detail': 'Set your Public URL in the Webhooks tab first'})
+    db.delete_api_tokens_by_device(user['id'], CLAUDE_DEVICE_NAME)
+    token = secrets.token_urlsafe(32)
+    db.create_api_token(user['id'], _hash_token(token),
+                        device_name=CLAUDE_DEVICE_NAME)
+    log.info('Claude MCP connector token minted for %s', user['name'])
+    return jsonify({'ok': True,
+                    'detail': 'Connector URL created — copy it now, it is shown only once',
+                    'url': f'{public}/mcp/{token}'})
 
 
 # ── Users ────────────────────────────────────────────────
@@ -1003,6 +1046,32 @@ def stream():
     return Response(event_generator(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache',
                              'X-Accel-Buffering': 'no'})
+
+
+# ── MCP (Claude connector) ───────────────────────────────
+
+@app.route('/mcp', methods=['POST', 'GET', 'DELETE'])
+@app.route('/mcp/<token>', methods=['POST', 'GET', 'DELETE'])
+def mcp_endpoint(token=None):
+    """Remote MCP server for Claude. Two auth forms resolve to the same
+    api_tokens row: the capability URL /mcp/<token> (claude.ai custom
+    connectors can't send headers) and Authorization: Bearer at bare /mcp
+    (Claude Code). The token is a secret — it appears in access logs, so
+    rotating it is one click in Settings → Integrations → Claude."""
+    if request.method != 'POST':
+        # Stateless server: no GET notification stream, no DELETE session
+        # termination — 405 is what the MCP spec prescribes for both.
+        return Response(status=405, headers={'Allow': 'POST'})
+    user = (db.get_user_by_token_hash(_hash_token(token)) if token
+            else _user_from_bearer())
+    if not user:
+        # Capability URL gets a 404 (don't confirm the namespace exists);
+        # the bearer form gets a plain 401 for Claude Code's error surface.
+        return ('', 404) if token else (jsonify({'error': 'Unauthorized'}), 401)
+    body, status = mcp_server.handle(user, request.get_json(silent=True, force=True))
+    if body is None:
+        return '', status
+    return jsonify(body), status
 
 
 # ── Webhooks ─────────────────────────────────────────────
