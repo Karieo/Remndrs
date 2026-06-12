@@ -153,7 +153,8 @@ struct FeedView: View {
             if lockedFeed == nil {
                 BrandSegmentedControl(
                     selection: $model.feed,
-                    options: [("private", "Mine"), ("shared", "Shared")],
+                    options: [("private", "Mine"), ("shared", "Shared"),
+                              ("archived", "Archived")],
                     badge: ["shared": sharedCount])
             }
             searchBar
@@ -168,7 +169,8 @@ struct FeedView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textMuted)
             TextField("", text: $model.search,
-                      prompt: Text(model.feed == "shared"
+                      prompt: Text(model.feed == "archived" ? "Search archived notes…"
+                                   : model.feed == "shared"
                                    ? "Search shared notes…" : "Search by text or date…")
                         .font(Theme.body(14, italic: true))
                         .foregroundStyle(Theme.textMuted))
@@ -202,6 +204,7 @@ struct FeedView: View {
                             onEdit: { editTarget = note },
                             onSend: { sendTarget = note },
                             onShareWith: { shareTarget = note },
+                            onArchive: { Task { await setArchived(note, !note.isArchived) } },
                             onDelete: { Task { await delete(note) } },
                             onToggleTodo: { todo in Task { await toggle(todo, in: note) } },
                             onReply: model.feed == "shared"
@@ -223,6 +226,13 @@ struct FeedView: View {
     private func delete(_ note: Note) async {
         try? await session.api?.deleteNote(id: note.id)
         await model.load(api: session.api)
+    }
+
+    private func setArchived(_ note: Note, _ archived: Bool) async {
+        _ = try? await session.api?.updateNote(id: note.id,
+                                               fields: ["archived": archived])
+        await model.load(api: session.api)
+        await refreshSharedCount()
     }
 
     private func toggle(_ todo: TodoItem, in note: Note) async {
