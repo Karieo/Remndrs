@@ -273,8 +273,11 @@ button { font-family:inherit; }
 .field input, .field select { flex:1; background:none; border:none; outline:none; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text); min-width:0; }
 .field select option { background:var(--surface-2); color:var(--text); }
 .sheet-foot { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
-.build-stamp { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.4px; margin-right:auto; text-align:center; margin-top:14px; user-select:all; }
-.sheet-foot .build-stamp { margin-top:0; }
+.build-stamp { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.4px; text-align:center; user-select:all; }
+/* In the settings footer the auto margin pushes the stamp left of the Done
+   button. It must stay scoped here: on the login page (a centered flex body)
+   it would absorb the free space and shove the card to the screen edge. */
+.sheet-foot .build-stamp { margin-right:auto; }
 .sx { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:8px 14px; border-radius:7px; cursor:pointer; border:1px solid var(--border); background:none; color:var(--text-muted); transition:all .15s; }
 .sx:hover { border-color:var(--border-2); color:var(--text-mid); }
 .sx.go { background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:600; }
@@ -366,11 +369,16 @@ button { font-family:inherit; }
 .composer-remind label { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
 
 /* ─── Login ────────────────────────────────────────────────── */
-.login-body { display:flex; align-items:center; justify-content:center; min-height:100vh; }
-.login-card { display:flex; flex-direction:column; gap:12px; width:300px; }
+.login-body { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+.login-card {
+  display:flex; flex-direction:column; gap:12px; width:100%; max-width:340px;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:34px 28px 28px; box-shadow:var(--shadow-hover);
+}
 .login-card .wordmark { font-size:28px; text-align:center; }
 .login-tag { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-muted); text-align:center; margin-bottom:14px; }
-.login-card input { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'Lora',serif; font-size:14px; padding:11px 14px; outline:none; transition:border-color .15s; }
+.login-body .build-stamp { margin-top:16px; }
+.login-card input { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'Lora',serif; font-size:14px; padding:11px 14px; outline:none; transition:border-color .15s; }
 .login-card input:focus { border-color:var(--border-2); }
 .login-card input::placeholder { color:var(--text-faint); font-style:italic; }
 .login-card button { background:var(--accent); border:none; color:var(--bg); font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; letter-spacing:0.4px; padding:12px; border-radius:8px; cursor:pointer; transition:filter .15s; }
