@@ -8,6 +8,7 @@ import re
 import secrets
 import socket
 import tempfile
+import time
 import uuid
 from datetime import datetime, timedelta
 
@@ -41,8 +42,17 @@ app = Flask(__name__)
 # over plain http on localhost, so Flask would reconstruct request.url with the
 # wrong scheme/host. Twilio and Mailgun sign the *public* https URL, so without
 # this their signature checks fail with a 403 and inbound notes silently vanish.
-# Trust the X-Forwarded-Proto/Host headers cloudflared sets.
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+# Trust the X-Forwarded-Proto/Host/For headers cloudflared sets; x_for makes
+# request.remote_addr the real visitor IP (needed for login throttling + logs).
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Lax blocks the session cookie on cross-site POSTs (CSRF) without breaking
+# normal navigation. Secure stays off because the app is also used over plain
+# http on the LAN (http://<host>.local:3000); Cloudflare enforces https publicly.
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# Caps any request body (uploads included) — big enough for photos and voice
+# memos, small enough that strangers can't fill the disk.
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 _secret = os.getenv('SESSION_SECRET')
 if not _secret:
@@ -116,6 +126,29 @@ def _hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# Per-IP failed-login throttle: after _THROTTLE_MAX failures within
+# _THROTTLE_WINDOW, that IP gets 429s on the auth endpoints until the window
+# rolls. In-memory on purpose — a restart clearing it is fine for a home app.
+_AUTH_FAILURES = {}
+_THROTTLE_WINDOW = 15 * 60
+_THROTTLE_MAX = 8
+
+
+def _auth_throttled(ip):
+    now = time.time()
+    fresh = [t for t in _AUTH_FAILURES.get(ip, []) if now - t < _THROTTLE_WINDOW]
+    if fresh:
+        _AUTH_FAILURES[ip] = fresh
+    else:
+        _AUTH_FAILURES.pop(ip, None)
+    return len(fresh) >= _THROTTLE_MAX
+
+
+def _record_auth_failure(ip):
+    _AUTH_FAILURES.setdefault(ip, []).append(time.time())
+    log.warning('Failed login attempt from %s', ip)
+
+
 def _user_from_bearer():
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
@@ -159,13 +192,17 @@ def login_page():
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
+    if _auth_throttled(request.remote_addr):
+        return jsonify({'error': 'Too many attempts — try again later'}), 429
     data = request.get_json(silent=True) or request.form
     login = (data.get('login') or data.get('email_or_name') or '').strip()
     password = data.get('password') or ''
     user = db.get_user_by_login(login)
     if not user or not bcrypt.checkpw(password.encode(),
                                       user['password_hash'].encode()):
+        _record_auth_failure(request.remote_addr)
         return jsonify({'error': 'Invalid credentials'}), 401
+    _AUTH_FAILURES.pop(request.remote_addr, None)
     session.permanent = True
     session['user_id'] = user['id']
     return jsonify({'success': True,
@@ -176,13 +213,17 @@ def api_login():
 @app.route('/api/auth/token', methods=['POST'])
 def api_create_token():
     """Issue a long-lived bearer token for mobile clients."""
+    if _auth_throttled(request.remote_addr):
+        return jsonify({'error': 'Too many attempts — try again later'}), 429
     data = request.get_json(silent=True) or {}
     login = (data.get('login') or '').strip()
     password = data.get('password') or ''
     user = db.get_user_by_login(login)
     if not user or not bcrypt.checkpw(password.encode(),
                                       user['password_hash'].encode()):
+        _record_auth_failure(request.remote_addr)
         return jsonify({'error': 'Invalid credentials'}), 401
+    _AUTH_FAILURES.pop(request.remote_addr, None)
     token = secrets.token_urlsafe(32)
     db.create_api_token(user['id'], _hash_token(token),
                         device_name=data.get('device_name'))
