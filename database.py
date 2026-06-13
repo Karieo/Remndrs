@@ -751,6 +751,15 @@ def list_reminders(user_id):
     return [dict(r) for r in rows]
 
 
+def note_reminders(note_id, include_fired=False):
+    sql = 'SELECT * FROM reminders WHERE note_id = ?'
+    if not include_fired:
+        sql += ' AND fired = 0'
+    with connect() as conn:
+        rows = conn.execute(sql + ' ORDER BY fire_at', (note_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def pending_reminders(user_id):
     """Reminders fired in the last 24h — SSE fallback for tabs that missed the push."""
     cutoff = (datetime.now() - timedelta(hours=24)).isoformat(timespec='seconds')
@@ -793,6 +802,11 @@ def save_link_preview(url, title, description, image, favicon, site_name):
             '(url, title, description, image, favicon, site_name, fetched_at) '
             'VALUES (?,?,?,?,?,?,?)',
             (url, title, description, image, favicon, site_name, now_iso()))
+
+
+def delete_link_preview(url):
+    with connect() as conn:
+        conn.execute('DELETE FROM link_previews WHERE url = ?', (url,))
 
 
 # ── Calendar events ──────────────────────────────────────

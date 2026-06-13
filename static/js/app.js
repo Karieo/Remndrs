@@ -456,9 +456,28 @@ function onSearchInput(){
 
 /* ─── Menus ────────────────────────────────────────────────── */
 function closeAllMenus(){
-  document.querySelectorAll('.dropdown.open').forEach(d=>d.classList.remove('open'));
+  document.querySelectorAll('.dropdown.open').forEach(d=>{
+    d.classList.remove('open');
+    d.style.position = d.style.top = d.style.right = d.style.left = '';
+  });
   document.querySelectorAll('.card-menu.open').forEach(b=>b.classList.remove('open'));
   document.querySelectorAll('.card.menu-open').forEach(c=>c.classList.remove('menu-open'));
+}
+function positionDropdown(dd, btn){
+  // The feed is a CSS multi-column masonry; an absolutely-positioned child of a
+  // card is fragmented across the column gap in WebKit (the menu shows up "cut
+  // in two"). Anchor the open menu to the ··· button with fixed positioning so
+  // it leaves the column flow entirely.
+  const r = btn.getBoundingClientRect();
+  dd.style.position = 'fixed';
+  dd.style.left = 'auto';
+  dd.style.right = (window.innerWidth - r.right) + 'px';
+  dd.style.top = (r.bottom + 4) + 'px';
+  // Flip above the button if the menu would run off the bottom of the screen.
+  const h = dd.offsetHeight;
+  if (r.bottom + 4 + h > window.innerHeight - 8){
+    dd.style.top = Math.max(8, r.top - 4 - h) + 'px';
+  }
 }
 function toggleMenu(e,id){
   e.stopPropagation();
@@ -471,9 +490,13 @@ function toggleMenu(e,id){
     // Lift the whole card above its neighbours; in the masonry columns a
     // plain z-index on the menu still paints under the next card down.
     dd.closest('.card')?.classList.add('menu-open');
+    positionDropdown(dd, e.currentTarget);
   }
 }
 document.addEventListener('click', closeAllMenus);
+// A fixed menu doesn't track scroll, so dismiss it on scroll rather than let it
+// hang detached from its card.
+window.addEventListener('scroll', closeAllMenus, true);
 
 /* ─── B4 · Send sheet ──────────────────────────────────────── */
 let sheetNote = null, sheetDest = 'sms', calendarPrefs = null;
@@ -648,18 +671,32 @@ function closeSettings(){ document.getElementById('settingsOverlay').classList.r
 async function renderSettings(){
   settingsData = await api('/api/settings').catch(()=>null);
   const tabs = settingsData
-    ? [['integrations','Integrations'],['people','People'],['webhooks','Webhooks'],['calendars','Calendars']]
+    ? [['general','General'],['integrations','Integrations'],['people','People'],['webhooks','Webhooks'],['calendars','Calendars']]
     : [['people','People'],['calendars','Calendars']];
   if (!tabs.some(t=>t[0]===settingsTab)) settingsTab = tabs[0][0];
   document.getElementById('settingsNav').innerHTML = tabs.map(([k,label])=>
     `<button class="${settingsTab===k?'active':''}" onclick="setSettingsTab('${k}')">${label}</button>`).join('');
   const body = document.getElementById('settingsBody');
-  if (settingsTab === 'integrations') renderIntegrations(body);
+  if (settingsTab === 'general') renderGeneral(body);
+  else if (settingsTab === 'integrations') renderIntegrations(body);
   else if (settingsTab === 'people') renderPeopleSettings(body);
   else if (settingsTab === 'webhooks') renderWebhooks(body);
   else renderCalendarSettings(body);
 }
 function setSettingsTab(tab){ settingsTab = tab; renderSettings(); }
+
+/* — General — */
+function renderGeneral(body){
+  const tz = (settingsData.TIMEZONE && settingsData.TIMEZONE.value) || '';
+  const guessTz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  body.innerHTML = `
+    <div class="set-section">
+      <div class="set-h">Time zone</div>
+      <div class="set-sub">The zone Remndrs stamps notes and fires reminders in. Set this if your notes show the wrong time — it overrides the server machine's clock zone. Use an IANA name like <code>America/Chicago</code>.${guessTz?` This browser looks like <code>${esc(guessTz)}</code>.`:''}</div>
+      <div class="set-row"><div class="field" style="margin:0"><input id="env-TIMEZONE" value="${esc(tz)}" placeholder="${esc(guessTz||'America/Chicago')}"></div></div>
+      <div class="set-test"><button class="sx" onclick="saveTimezone()">Save</button>${guessTz?`<button class="sx" onclick="document.getElementById('env-TIMEZONE').value='${esc(guessTz)}'">Use this browser's</button>`:''}<span class="set-test-result" id="tz-result"></span></div>
+    </div>`;
+}
 
 /* — Integrations — */
 const SERVICES = [
@@ -829,6 +866,14 @@ async function savePublicURL(){
   out.className='set-test-result ok'; out.textContent='saved ✓';
   settingsData = await api('/api/settings');
   renderWebhooks(document.getElementById('settingsBody'));
+}
+async function saveTimezone(){
+  const out = document.getElementById('tz-result');
+  const value = document.getElementById('env-TIMEZONE').value.trim();
+  if (!value){ out.className='set-test-result bad'; out.textContent='enter a zone'; return; }
+  await api('/api/settings', { method:'PATCH', body: JSON.stringify({ TIMEZONE: value }) });
+  out.className='set-test-result ok'; out.textContent='saved ✓ — new notes use this zone';
+  settingsData = await api('/api/settings').catch(()=>settingsData);
 }
 function copyText(text){
   if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
@@ -1110,13 +1155,15 @@ async function saveNote(){
       ? await api('/api/notes/'+editingNoteId, { method:'PATCH', body: JSON.stringify(body) })
       : await api('/api/notes', { method:'POST', body: JSON.stringify(body) });
     await attachComposerFiles(note);
-    if (document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
+    // The server already scheduled a reminder if the note is #reminder-tagged
+    // with a time in its body; only fall back to the manual picker otherwise.
+    if (!note.reminder && document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
         fire_at: document.getElementById('remindAt').value + ':00',
         notify_web: true, notify_sms: true, note_id: note.id,
       }) });
-      refreshReminderCount();
+      note.reminder = { fire_at: document.getElementById('remindAt').value + ':00' };
     }
     document.getElementById('composerText').value = '';
     document.getElementById('remindOn').checked = false;
@@ -1125,7 +1172,9 @@ async function saveNote(){
     const wasEditing = !!editingNoteId;
     editingNoteId = null;
     closeComposer();
-    toast(`${svg(composerMode==='todo'?'check':'app',13)} ${wasEditing?'Updated':(composerMode==='todo'?'List saved':'Note saved')}`);
+    toast(note.reminder
+      ? `${svg('app',13)} Reminder set for ${fmtDate(note.reminder.fire_at)}`
+      : `${svg(composerMode==='todo'?'check':'app',13)} ${wasEditing?'Updated':(composerMode==='todo'?'List saved':'Note saved')}`);
     loadTags(); loadNotes(); refreshSharedBadge();
   } catch (e) { toast(esc(e.message)); }
 }

@@ -114,8 +114,10 @@ button { font-family:inherit; }
 }
 .card:hover { box-shadow:var(--shadow-hover); transform:translateY(-1px); }
 /* While its menu is open the card sits above its neighbours so the dropdown
-   isn't painted under the next card down in the masonry column. */
-.card.menu-open { z-index:40; }
+   isn't painted under the next card down in the masonry column. transform:none
+   keeps a hover lift from becoming the containing block for the now-fixed
+   dropdown (which would re-anchor it to the card and clip it). */
+.card.menu-open { z-index:40; transform:none; }
 .card.editable { cursor:pointer; }
 .card.pinned { background:var(--pinned-bg); border-left-color:var(--pinned-border); }
 
@@ -243,10 +245,14 @@ button { font-family:inherit; }
 .dropdown {
   position:absolute; top:30px; right:8px; width:184px; z-index:30;
   background:var(--surface-2); border:1px solid var(--border-2); border-radius:8px; padding:5px;
-  box-shadow:0 12px 34px rgba(0,0,0,0.45);
+  box-shadow:0 12px 34px rgba(0,0,0,0.45); break-inside:avoid;
   opacity:0; transform:translateY(-4px) scale(0.98); pointer-events:none; transition:opacity .12s,transform .12s; transform-origin:top right;
 }
-.dropdown.open { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+/* Opened as position:fixed in JS (see toggleMenu): the feed is a CSS
+   multi-column masonry, where an absolutely-positioned child of a card is
+   fragmented across the column gap in WebKit — the menu shows up "cut in two".
+   Fixed positioning lifts it out of the column flow. */
+.dropdown.open { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; z-index:300; }
 .dd-label { font-family:'IBM Plex Mono',monospace; font-size:8px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.8px; padding:5px 8px 3px; }
 .dd-item { display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:5px; font-size:12px; color:var(--text-mid); cursor:pointer; transition:background .1s,color .1s; }
 .dd-item:hover { background:var(--surface-3); color:var(--text); }

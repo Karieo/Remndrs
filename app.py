@@ -16,6 +16,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def apply_timezone():
+    """Pin the process timezone from the TIMEZONE setting.
+
+    Remndrs stores naive local wall-clock times everywhere (created_at, reminder
+    fire_at, calendar windows, date search), so "local" means whatever timezone
+    the host's clock is set to. When the host is on the wrong zone (a Pi, a
+    container, or a cloud box defaulting to UTC), every timestamp lands hours
+    off — notes appear in the future, reminders fire early. Setting TIMEZONE
+    (an IANA name like "America/New_York") makes the app use that zone for
+    datetime.now() regardless of the host, so the install isn't at the mercy of
+    the system clock's zone. Unset → keep the host zone (the prior behaviour)."""
+    tz = os.getenv('TIMEZONE', '').strip()
+    if not tz:
+        return
+    os.environ['TZ'] = tz
+    try:
+        time.tzset()  # Unix only; Windows keeps the system zone.
+    except AttributeError:
+        logging.getLogger('remndrs').warning(
+            'TIMEZONE set but time.tzset() is unavailable on this OS')
+
+
+apply_timezone()
+
 import bcrypt
 import requests as http
 from flask import (Flask, Response, jsonify, redirect, render_template,
@@ -271,6 +296,32 @@ def _persist_note_file(note):
     return note
 
 
+# Notes tagged #reminder turn a time written in their body into a real reminder
+# (the built-in feature), so "pick up Mom 2:15 PM today #reminder" schedules
+# itself instead of leaving the time as plain text.
+REMINDER_TAG = 'REMINDER'
+
+
+def _auto_reminder_from_note(note):
+    """If a note carries the #reminder tag and none is scheduled yet, parse a
+    date/time from its body (same parser as SMS REMIND ME) and create a reminder
+    linked to the note. Attaches the created reminder to the returned note dict
+    so the client can confirm it. No-op when there's no parseable future time."""
+    if not any(t['name'] == REMINDER_TAG for t in note['tags']):
+        return note
+    if db.note_reminders(note['id']):          # already scheduled — don't duplicate
+        return note
+    parsed = reminders.parse_remind_text(note['content'])
+    if not parsed:
+        return note
+    fire_at, message = parsed
+    message = message or note['content'].split('\n')[0][:120] or 'Reminder'
+    rem = db.create_reminder(note['user_id'], message, fire_at,
+                             notify_sms=True, notify_web=True, note_id=note['id'])
+    note['reminder'] = {'fire_at': rem['fire_at'], 'message': rem['message']}
+    return note
+
+
 @app.route('/api/notes')
 def api_list_notes():
     # feed=archived is the archived view: all archived notes the user can
@@ -307,6 +358,7 @@ def api_create_note():
         tags=data.get('tags'),
         todos=data.get('todos'))
     note = _persist_note_file(note)
+    note = _auto_reminder_from_note(note)
     sse.push_note_event('note_created', note)
     return jsonify(note), 201
 
@@ -332,6 +384,7 @@ def api_update_note(note_id):
         files.move_note_file(existing, owner['name'], existing['feed'])
         note = db.update_note(note_id, filename=None)
     note = _persist_note_file(note)
+    note = _auto_reminder_from_note(note)
     sse.push_note_event('note_updated', note)
     return jsonify(note)
 
@@ -364,6 +417,7 @@ SETTINGS_KEYS = {
     'CALDAV_PASSWORD': True,
     'TELEGRAM_BOT_TOKEN': True,
     'PUBLIC_URL': False,
+    'TIMEZONE': False,
 }
 
 ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
@@ -446,6 +500,8 @@ def api_update_settings():
                if k in SETTINGS_KEYS and str(v).strip() != ''}
     if updates:
         _write_env(updates)
+        if 'TIMEZONE' in updates:
+            apply_timezone()  # take effect now, not just on restart
         log.info('Settings updated: %s', ', '.join(updates))
     return jsonify({'success': True, 'updated': sorted(updates)})
 
@@ -778,6 +834,20 @@ def _meta(html, *names):
     return None
 
 
+# Titles served by CDN/bot walls (Akamai, Cloudflare, …) instead of the real
+# page. Scraping one of these used to surface "Access Denied" as the preview;
+# we now refuse them and self-heal any that were cached before this fix.
+_BLOCK_TITLES = {
+    'access denied', 'forbidden', '403 forbidden', '401 unauthorized',
+    'access to this page has been denied', 'pardon our interruption',
+    'attention required! | cloudflare', 'just a moment...', 'are you a robot?',
+}
+
+
+def _looks_blocked(title):
+    return bool(title) and title.strip().lower() in _BLOCK_TITLES
+
+
 @app.route('/api/preview')
 def api_link_preview():
     url = request.args.get('url', '').strip()
@@ -785,7 +855,10 @@ def api_link_preview():
         return jsonify({'error': 'No URL'}), 400
     cached = db.get_link_preview(url)
     if cached:
-        return jsonify(cached)
+        if _looks_blocked(cached.get('title')):
+            db.delete_link_preview(url)  # drop a previously-cached block page
+        else:
+            return jsonify(cached)
 
     # YouTube serves its og: tags behind bot/consent walls that the plain
     # scraper below trips over, so a link to a video showed no card at all.
@@ -819,12 +892,19 @@ def api_link_preview():
     try:
         resp = http.get(url, timeout=5, headers={
             'User-Agent': 'Mozilla/5.0 (compatible; Remndrs/1.0)'})
+        # A 403/blocked page still has a body (e.g. an Akamai "Access Denied"
+        # page); scraping it cached a junk title. Reject non-OK responses.
+        resp.raise_for_status()
         html = resp.text[:500000]
         title = _meta(html, 'og:title')
         if not title:
             m = re.search(r'<title[^>]*>(.*?)</title>', html,
                           re.IGNORECASE | re.DOTALL)
             title = m.group(1).strip() if m else None
+        # No usable title, or a CDN block wall that returned 200 — render no card
+        # rather than a misleading one, and don't poison the cache with it.
+        if not title or _looks_blocked(title):
+            return jsonify({'error': 'Could not fetch preview'}), 200
         preview = {
             'url': url,
             'title': title,
