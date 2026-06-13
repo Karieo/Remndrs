@@ -778,6 +778,20 @@ def _meta(html, *names):
     return None
 
 
+# Titles served by CDN/bot walls (Akamai, Cloudflare, …) instead of the real
+# page. Scraping one of these used to surface "Access Denied" as the preview;
+# we now refuse them and self-heal any that were cached before this fix.
+_BLOCK_TITLES = {
+    'access denied', 'forbidden', '403 forbidden', '401 unauthorized',
+    'access to this page has been denied', 'pardon our interruption',
+    'attention required! | cloudflare', 'just a moment...', 'are you a robot?',
+}
+
+
+def _looks_blocked(title):
+    return bool(title) and title.strip().lower() in _BLOCK_TITLES
+
+
 @app.route('/api/preview')
 def api_link_preview():
     url = request.args.get('url', '').strip()
@@ -785,7 +799,10 @@ def api_link_preview():
         return jsonify({'error': 'No URL'}), 400
     cached = db.get_link_preview(url)
     if cached:
-        return jsonify(cached)
+        if _looks_blocked(cached.get('title')):
+            db.delete_link_preview(url)  # drop a previously-cached block page
+        else:
+            return jsonify(cached)
 
     # YouTube serves its og: tags behind bot/consent walls that the plain
     # scraper below trips over, so a link to a video showed no card at all.
@@ -819,12 +836,19 @@ def api_link_preview():
     try:
         resp = http.get(url, timeout=5, headers={
             'User-Agent': 'Mozilla/5.0 (compatible; Remndrs/1.0)'})
+        # A 403/blocked page still has a body (e.g. an Akamai "Access Denied"
+        # page); scraping it cached a junk title. Reject non-OK responses.
+        resp.raise_for_status()
         html = resp.text[:500000]
         title = _meta(html, 'og:title')
         if not title:
             m = re.search(r'<title[^>]*>(.*?)</title>', html,
                           re.IGNORECASE | re.DOTALL)
             title = m.group(1).strip() if m else None
+        # No usable title, or a CDN block wall that returned 200 — render no card
+        # rather than a misleading one, and don't poison the cache with it.
+        if not title or _looks_blocked(title):
+            return jsonify({'error': 'Could not fetch preview'}), 200
         preview = {
             'url': url,
             'title': title,

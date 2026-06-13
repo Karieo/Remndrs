@@ -795,6 +795,11 @@ def save_link_preview(url, title, description, image, favicon, site_name):
             (url, title, description, image, favicon, site_name, now_iso()))
 
 
+def delete_link_preview(url):
+    with connect() as conn:
+        conn.execute('DELETE FROM link_previews WHERE url = ?', (url,))
+
+
 # ── Calendar events ──────────────────────────────────────
 
 def get_calendar_event(event_id):
