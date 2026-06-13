@@ -385,6 +385,7 @@ function visibleEvents() {
 }
 
 function renderCards() {
+  closeAllMenus();   // return any portaled menu home before we wipe the grid
   const grid = document.getElementById('grid');
   const items = [
     ...visibleNotes().map(n => ({ pinned: n.pinned, at: n.created_at, html: () => cardHTML(n) })),
@@ -459,15 +460,16 @@ function closeAllMenus(){
   document.querySelectorAll('.dropdown.open').forEach(d=>{
     d.classList.remove('open');
     d.style.position = d.style.top = d.style.right = d.style.left = '';
+    if (d._homeParent){                       // return it from the body portal
+      d._homeParent.insertBefore(d, d._homeNext);
+      d._homeParent = d._homeNext = null;
+    }
   });
   document.querySelectorAll('.card-menu.open').forEach(b=>b.classList.remove('open'));
   document.querySelectorAll('.card.menu-open').forEach(c=>c.classList.remove('menu-open'));
 }
 function positionDropdown(dd, btn){
-  // The feed is a CSS multi-column masonry; an absolutely-positioned child of a
-  // card is fragmented across the column gap in WebKit (the menu shows up "cut
-  // in two"). Anchor the open menu to the ··· button with fixed positioning so
-  // it leaves the column flow entirely.
+  // Anchor the portaled menu to the ··· button with fixed positioning.
   const r = btn.getBoundingClientRect();
   dd.style.position = 'fixed';
   dd.style.left = 'auto';
@@ -485,12 +487,18 @@ function toggleMenu(e,id){
   const wasOpen = dd.classList.contains('open');
   closeAllMenus();
   if (!wasOpen){
-    dd.classList.add('open');
-    e.currentTarget.classList.add('open');
-    // Lift the whole card above its neighbours; in the masonry columns a
-    // plain z-index on the menu still paints under the next card down.
+    const btn = e.currentTarget;
     dd.closest('.card')?.classList.add('menu-open');
-    positionDropdown(dd, e.currentTarget);
+    // Portal the menu to <body>. The feed is a CSS multi-column masonry, and
+    // WebKit both fragments an absolutely-positioned menu across the column gap
+    // ("cut in two") and mis-places position:fixed *inside* a multicol. Lifting
+    // it out to the body escapes both; then we anchor it to the button.
+    dd._homeParent = dd.parentNode;
+    dd._homeNext = dd.nextSibling;
+    document.body.appendChild(dd);
+    dd.classList.add('open');
+    btn.classList.add('open');
+    positionDropdown(dd, btn);
   }
 }
 document.addEventListener('click', closeAllMenus);
