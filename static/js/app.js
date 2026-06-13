@@ -1122,12 +1122,15 @@ async function saveNote(){
       ? await api('/api/notes/'+editingNoteId, { method:'PATCH', body: JSON.stringify(body) })
       : await api('/api/notes', { method:'POST', body: JSON.stringify(body) });
     await attachComposerFiles(note);
-    if (document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
+    // The server already scheduled a reminder if the note is #reminder-tagged
+    // with a time in its body; only fall back to the manual picker otherwise.
+    if (!note.reminder && document.getElementById('remindOn').checked && document.getElementById('remindAt').value){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
         fire_at: document.getElementById('remindAt').value + ':00',
         notify_web: true, notify_sms: true, note_id: note.id,
       }) });
+      note.reminder = { fire_at: document.getElementById('remindAt').value + ':00' };
     }
     document.getElementById('composerText').value = '';
     document.getElementById('remindOn').checked = false;
@@ -1136,7 +1139,9 @@ async function saveNote(){
     const wasEditing = !!editingNoteId;
     editingNoteId = null;
     closeComposer();
-    toast(`${svg(composerMode==='todo'?'check':'app',13)} ${wasEditing?'Updated':(composerMode==='todo'?'List saved':'Note saved')}`);
+    toast(note.reminder
+      ? `${svg('app',13)} Reminder set for ${fmtDate(note.reminder.fire_at)}`
+      : `${svg(composerMode==='todo'?'check':'app',13)} ${wasEditing?'Updated':(composerMode==='todo'?'List saved':'Note saved')}`);
     loadTags(); loadNotes(); refreshSharedBadge();
   } catch (e) { toast(esc(e.message)); }
 }
