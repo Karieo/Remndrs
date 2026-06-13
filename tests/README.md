@@ -28,6 +28,9 @@ pytest tests/test_auth.py    # one file
 | `test_attachments.py` | extension parsing, allow-list gate, markdown links, traversal-safe resolve | 2 (parsing) |
 | `test_reminders.py` | natural-language `parse_remind_text` contract | 2 (parsing) |
 | `test_mcp.py` | JSON-RPC dispatch (initialize/ping/tools/batch/errors), tool handlers | 2 (parsing) |
+| `test_sse.py` | subscribe/unsubscribe, per-user fan-out, shared-note broadcast | 3 (stateful) |
+| `test_calendar_sync.py` | `parse_vevent`, credential encrypt/decrypt + fallback, `orphan_event` | 3 (stateful) |
+| `test_routes.py` | note persistence invariant, share/replies, send-anywhere, owner-gated settings | 3 (stateful) |
 
 ## Fixtures (`conftest.py`)
 
@@ -35,8 +38,19 @@ pytest tests/test_auth.py    # one file
 - `make_user` / `make_note` — factories for seeding rows.
 - `client` — Flask test client (imports `app` lazily).
 
+In route tests, log a user in with:
+
+```python
+with client.session_transaction() as sess:
+    sess['user_id'] = user['id']
+```
+
+(see the `login` fixture in `test_routes.py`).
+
 ## Not yet covered
 
-Calendar CalDAV sync (`calendar_sync.py`), SSE fan-out, and the bulk of
-`app.py`'s route bodies (send-anywhere, share/replies, settings). These are the
-natural next slice (Tier 3 — stateful integration paths).
+The live network paths that need a mocked provider SDK: the CalDAV
+connect/discover/fetch/push code in `calendar_sync.py` (everything behind
+`get_client`), Whisper transcription in `voice.py`, and outbound Twilio/Mailgun
+sends. The reminder/calendar APScheduler dispatch in `reminders.py` is also
+untested end-to-end. These are the natural next slice.
