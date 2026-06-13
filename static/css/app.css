@@ -274,6 +274,17 @@ button { font-family:inherit; }
 .field input, .field select { flex:1; background:none; border:none; outline:none; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text); min-width:0; }
 .field select option { background:var(--surface-2); color:var(--text); }
 .sheet-foot { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
+/* Upcoming reminders list */
+.rem-list { max-height:50vh; overflow-y:auto; margin-bottom:14px; }
+.rem-row { display:flex; align-items:center; gap:10px; justify-content:space-between;
+  padding:9px 11px; border:1px solid var(--border); border-radius:7px; margin-bottom:7px; }
+.rem-text { min-width:0; }
+.rem-when { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--accent);
+  text-transform:uppercase; letter-spacing:0.4px; margin-bottom:2px; }
+.rem-msg { font-size:13px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rem-del { flex-shrink:0; }
+.rem-empty { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted);
+  padding:18px 0; text-align:center; }
 .build-stamp { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.4px; text-align:center; user-select:all; }
 /* In the settings footer the auto margin pushes the stamp left of the Done
    button. It must stay scoped here: on the login page (a centered flex body)

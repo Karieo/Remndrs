@@ -24,6 +24,7 @@
       <button class="feed-btn" id="feedShared" onclick="setFeed('shared')">Shared <span class="feed-badge" id="sharedBadge" hidden>0</span></button>
       <button class="feed-btn" id="feedArchived" onclick="setFeed('archived')" title="Archived notes">Archived</button>
     </div>
+    <button class="icon-btn" onclick="openReminders()" title="Upcoming reminders" id="remindersBtn">⏰<span class="feed-badge" id="remindersBadge" hidden>0</span></button>
     <button class="icon-btn" onclick="openSettings()" title="Calendars & settings" id="settingsBtn">⚙</button>
     <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" id="themeBtn"></button>
     <button class="icon-btn" onclick="logout()" title="Log out">Log out</button>
@@ -56,6 +57,18 @@
     <div class="sheet-foot">
       <button class="sx" onclick="closeSheet()">Cancel</button>
       <button class="sx go" id="sendGo" onclick="confirmSend()">Send →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upcoming reminders -->
+<div class="overlay" id="remindersOverlay" onclick="if(event.target===this)closeReminders()">
+  <div class="sheet">
+    <div class="sheet-h">Upcoming reminders</div>
+    <div class="sheet-sub">Scheduled from the app, SMS, Telegram, or Claude</div>
+    <div class="rem-list" id="remindersList"></div>
+    <div class="sheet-foot">
+      <button class="sx" onclick="closeReminders()">Close</button>
     </div>
   </div>
 </div>

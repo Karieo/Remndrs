@@ -901,6 +901,39 @@ function dismissReminder(id){
   document.querySelector(`[data-reminder="${id}"]`)?.remove();
 }
 
+/* ─── Upcoming reminders ───────────────────────────────────── */
+async function refreshReminderCount(){
+  const rems = await api('/api/reminders').catch(()=>[]);
+  const badge = document.getElementById('remindersBadge');
+  if (!badge) return rems;
+  badge.textContent = rems.length;
+  badge.hidden = !rems.length;
+  return rems;
+}
+async function openReminders(){
+  document.getElementById('remindersOverlay').classList.add('open');
+  const list = document.getElementById('remindersList');
+  list.innerHTML = '<div class="rem-empty">Loading…</div>';
+  const rems = await refreshReminderCount();
+  if (!rems.length){ list.innerHTML = '<div class="rem-empty">No upcoming reminders.</div>'; return; }
+  list.innerHTML = rems.map(r => `
+    <div class="rem-row" data-rem="${r.id}">
+      <div class="rem-text">
+        <div class="rem-when">${fmtDate(r.fire_at)}</div>
+        <div class="rem-msg">${esc(r.message)}</div>
+      </div>
+      <button class="sx rem-del" onclick="deleteReminder('${r.id}')" title="Cancel reminder">✕</button>
+    </div>`).join('');
+}
+function closeReminders(){ document.getElementById('remindersOverlay').classList.remove('open'); }
+async function deleteReminder(id){
+  await api('/api/reminders/'+id, { method:'DELETE' }).catch(()=>{});
+  document.querySelector(`.rem-row[data-rem="${id}"]`)?.remove();
+  refreshReminderCount();
+  if (!document.querySelector('.rem-row'))
+    document.getElementById('remindersList').innerHTML = '<div class="rem-empty">No upcoming reminders.</div>';
+}
+
 /* ─── Composer ─────────────────────────────────────────────── */
 let composerMode = 'note', composerFeed = 'private', editingNoteId = null;
 let composerAttachments = [];
@@ -1083,6 +1116,7 @@ async function saveNote(){
         fire_at: document.getElementById('remindAt').value + ':00',
         notify_web: true, notify_sms: true, note_id: note.id,
       }) });
+      refreshReminderCount();
     }
     document.getElementById('composerText').value = '';
     document.getElementById('remindOn').checked = false;
@@ -1120,7 +1154,7 @@ function startStream(){
   evtSource.onmessage = (e) => {
     const event = JSON.parse(e.data);
     if (event.type === 'heartbeat') return;
-    if (event.type === 'reminder') { showReminderBanner(event.data); return; }
+    if (event.type === 'reminder') { showReminderBanner(event.data); refreshReminderCount(); return; }
     loadTags(); loadNotes(); refreshSharedBadge();
   };
 }
@@ -1152,3 +1186,4 @@ loadPeople();
 refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});
+refreshReminderCount();
