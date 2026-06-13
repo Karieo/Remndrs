@@ -271,6 +271,32 @@ def _persist_note_file(note):
     return note
 
 
+# Notes tagged #reminder turn a time written in their body into a real reminder
+# (the built-in feature), so "pick up Mom 2:15 PM today #reminder" schedules
+# itself instead of leaving the time as plain text.
+REMINDER_TAG = 'REMINDER'
+
+
+def _auto_reminder_from_note(note):
+    """If a note carries the #reminder tag and none is scheduled yet, parse a
+    date/time from its body (same parser as SMS REMIND ME) and create a reminder
+    linked to the note. Attaches the created reminder to the returned note dict
+    so the client can confirm it. No-op when there's no parseable future time."""
+    if not any(t['name'] == REMINDER_TAG for t in note['tags']):
+        return note
+    if db.note_reminders(note['id']):          # already scheduled — don't duplicate
+        return note
+    parsed = reminders.parse_remind_text(note['content'])
+    if not parsed:
+        return note
+    fire_at, message = parsed
+    message = message or note['content'].split('\n')[0][:120] or 'Reminder'
+    rem = db.create_reminder(note['user_id'], message, fire_at,
+                             notify_sms=True, notify_web=True, note_id=note['id'])
+    note['reminder'] = {'fire_at': rem['fire_at'], 'message': rem['message']}
+    return note
+
+
 @app.route('/api/notes')
 def api_list_notes():
     # feed=archived is the archived view: all archived notes the user can
@@ -307,6 +333,7 @@ def api_create_note():
         tags=data.get('tags'),
         todos=data.get('todos'))
     note = _persist_note_file(note)
+    note = _auto_reminder_from_note(note)
     sse.push_note_event('note_created', note)
     return jsonify(note), 201
 
@@ -332,6 +359,7 @@ def api_update_note(note_id):
         files.move_note_file(existing, owner['name'], existing['feed'])
         note = db.update_note(note_id, filename=None)
     note = _persist_note_file(note)
+    note = _auto_reminder_from_note(note)
     sse.push_note_event('note_updated', note)
     return jsonify(note)
 

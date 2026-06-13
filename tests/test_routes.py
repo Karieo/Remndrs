@@ -64,6 +64,45 @@ def test_update_note_others_private_is_not_found(client, login, make_user):
     assert resp.status_code == 404
 
 
+# ── #reminder tag schedules a reminder from the note body ──────────────────
+
+def test_reminder_tag_schedules_from_body(client, login, make_user):
+    import datetime as _dt
+    login(make_user('Clay'))
+    note = client.post('/api/notes', json={
+        'content': 'Call Bob January 1 2099 9am', 'tags': ['REMINDER']}).get_json()
+    assert note.get('reminder')                       # confirmed back to the client
+    rems = db.note_reminders(note['id'])
+    assert len(rems) == 1
+    assert rems[0]['fire_at'] > _dt.datetime.now().isoformat()   # scheduled in the future
+
+
+def test_no_reminder_without_tag(client, login, make_user):
+    login(make_user('Clay'))
+    note = client.post('/api/notes',
+                       json={'content': 'Call Bob January 1 2099 9am'}).get_json()
+    assert not note.get('reminder')
+    assert db.note_reminders(note['id']) == []
+
+
+def test_reminder_tag_without_time_is_noop(client, login, make_user):
+    login(make_user('Clay'))
+    note = client.post('/api/notes', json={
+        'content': 'just remember this', 'tags': ['REMINDER']}).get_json()
+    assert not note.get('reminder')
+    assert db.note_reminders(note['id']) == []
+
+
+def test_reminder_not_duplicated_on_edit(client, login, make_user):
+    login(make_user('Clay'))
+    note = client.post('/api/notes', json={
+        'content': 'Call Bob January 1 2099 9am', 'tags': ['REMINDER']}).get_json()
+    assert len(db.note_reminders(note['id'])) == 1
+    client.patch(f"/api/notes/{note['id']}", json={
+        'content': 'Call Bob January 1 2099 9am (updated)', 'tags': ['REMINDER']})
+    assert len(db.note_reminders(note['id'])) == 1   # not re-created
+
+
 # ── Share ──────────────────────────────────────────────────────────────────
 
 def test_share_moves_note_to_shared_with_attribution(client, login, make_user, notes_in_tmp):
