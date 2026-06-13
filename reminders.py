@@ -52,19 +52,31 @@ def parse_remind_text(text):
 def check_reminders():
     """Runs every 60 seconds. Fires any reminders whose fire_at has passed."""
     now = datetime.now().isoformat(timespec='seconds')
-    for reminder in db.get_due_reminders(now):
-        db.mark_reminder_fired(reminder['id'])
-        user = db.get_user(reminder['user_id'])
-        if reminder['notify_web']:
-            sse.push_event(reminder['user_id'], 'reminder', {
-                'id': reminder['id'],
-                'message': reminder['message'],
-                'fire_at': reminder['fire_at'],
-            })
-        if reminder['notify_sms'] and user and user.get('phone_number'):
-            import sms
-            sms.send_sms(user, user['phone_number'],
-                         f"⏰ Reminder: {reminder['message']}")
+    due = db.get_due_reminders(now)
+    if due:
+        log.info('Reminder check at %s: %d due', now, len(due))
+    for reminder in due:
+        try:
+            _dispatch_reminder(reminder)
+        except Exception:
+            # One bad reminder (e.g. an SMS send error) must not abort the rest
+            # or silently kill the job — log it and keep going.
+            log.exception('Failed to dispatch reminder %s', reminder['id'])
+
+
+def _dispatch_reminder(reminder):
+    db.mark_reminder_fired(reminder['id'])
+    user = db.get_user(reminder['user_id'])
+    if reminder['notify_web']:
+        sse.push_event(reminder['user_id'], 'reminder', {
+            'id': reminder['id'],
+            'message': reminder['message'],
+            'fire_at': reminder['fire_at'],
+        })
+    if reminder['notify_sms'] and user and user.get('phone_number'):
+        import sms
+        sms.send_sms(user, user['phone_number'],
+                     f"⏰ Reminder: {reminder['message']}")
 
 
 def run_calendar_sync():
@@ -81,4 +93,5 @@ def start():
     scheduler.add_job(check_reminders, 'interval', seconds=60)
     scheduler.add_job(run_calendar_sync, 'interval', minutes=10)
     scheduler.start()
+    log.info('Scheduler started — reminder dispatch every 60s, calendar sync every 10m')
     atexit.register(lambda: scheduler.shutdown(wait=False))
