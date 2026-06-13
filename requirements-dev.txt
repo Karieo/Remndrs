@@ -1,0 +1,5 @@
+# Test/dev dependencies. Install with: pip install -r requirements-dev.txt
+# (the app's own runtime deps in requirements.txt are also needed to run tests).
+-r requirements.txt
+pytest>=8.0.0
+pytest-cov>=5.0.0

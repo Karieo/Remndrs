@@ -6,3 +6,6 @@ uploads/
 venv/
 .venv/
 .DS_Store
+.coverage
+.pytest_cache/
+htmlcov/
