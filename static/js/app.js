@@ -456,9 +456,28 @@ function onSearchInput(){
 
 /* ─── Menus ────────────────────────────────────────────────── */
 function closeAllMenus(){
-  document.querySelectorAll('.dropdown.open').forEach(d=>d.classList.remove('open'));
+  document.querySelectorAll('.dropdown.open').forEach(d=>{
+    d.classList.remove('open');
+    d.style.position = d.style.top = d.style.right = d.style.left = '';
+  });
   document.querySelectorAll('.card-menu.open').forEach(b=>b.classList.remove('open'));
   document.querySelectorAll('.card.menu-open').forEach(c=>c.classList.remove('menu-open'));
+}
+function positionDropdown(dd, btn){
+  // The feed is a CSS multi-column masonry; an absolutely-positioned child of a
+  // card is fragmented across the column gap in WebKit (the menu shows up "cut
+  // in two"). Anchor the open menu to the ··· button with fixed positioning so
+  // it leaves the column flow entirely.
+  const r = btn.getBoundingClientRect();
+  dd.style.position = 'fixed';
+  dd.style.left = 'auto';
+  dd.style.right = (window.innerWidth - r.right) + 'px';
+  dd.style.top = (r.bottom + 4) + 'px';
+  // Flip above the button if the menu would run off the bottom of the screen.
+  const h = dd.offsetHeight;
+  if (r.bottom + 4 + h > window.innerHeight - 8){
+    dd.style.top = Math.max(8, r.top - 4 - h) + 'px';
+  }
 }
 function toggleMenu(e,id){
   e.stopPropagation();
@@ -471,9 +490,13 @@ function toggleMenu(e,id){
     // Lift the whole card above its neighbours; in the masonry columns a
     // plain z-index on the menu still paints under the next card down.
     dd.closest('.card')?.classList.add('menu-open');
+    positionDropdown(dd, e.currentTarget);
   }
 }
 document.addEventListener('click', closeAllMenus);
+// A fixed menu doesn't track scroll, so dismiss it on scroll rather than let it
+// hang detached from its card.
+window.addEventListener('scroll', closeAllMenus, true);
 
 /* ─── B4 · Send sheet ──────────────────────────────────────── */
 let sheetNote = null, sheetDest = 'sms', calendarPrefs = null;
