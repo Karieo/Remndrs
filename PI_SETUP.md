@@ -138,9 +138,36 @@ Your Mac's `~/Remndrs` folder and notes stay put — nothing is deleted.
 
 ## Updating the Pi later
 
+Pull the latest code and restart the service. The `-t` flag is important: it
+gives `sudo` a terminal to prompt for your password on. Without it,
+`ssh host 'sudo …'` fails with *"sudo: a terminal is required to read the
+password"* — the files update but the service never restarts, so you keep
+running the old code (the build stamp in ⚙ Settings won't change).
+
 ```bash
-ssh pi@remndrs-pi.local 'cd ~/Remndrs && git pull && sudo systemctl restart remndrs'
+ssh -t pi@remndrs-pi.local 'cd ~/Remndrs && git pull && sudo systemctl restart remndrs'
 ```
+
+Confirm the deploy actually landed — the commit should match the latest one you
+pulled:
+
+```bash
+ssh pi@remndrs-pi.local 'curl -s localhost:3000/api/version'
+```
+
+### Optional: passwordless restart (so the one-liner never stalls)
+
+To let the update command restart the service without a password prompt at all,
+add a sudoers rule scoped to just that command (run once on the Pi):
+
+```bash
+echo "$USER ALL=(root) NOPASSWD: /bin/systemctl restart remndrs" | \
+  sudo tee /etc/sudoers.d/remndrs-restart
+sudo chmod 440 /etc/sudoers.d/remndrs-restart
+```
+
+Then plain `ssh pi@… 'cd ~/Remndrs && git pull && sudo systemctl restart remndrs'`
+works unattended.
 
 ## Hosting more sites on the same Pi
 
