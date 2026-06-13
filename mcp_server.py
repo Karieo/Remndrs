@@ -41,11 +41,65 @@ class ToolError(Exception):
 
 # ── Tool implementations ─────────────────────────────────
 
+def _parse_when(when):
+    """Parse an ISO 8601 or natural-language time into a naive *local*
+    datetime, or None if unparseable.
+
+    Remndrs stores naive local wall-clock times everywhere (see now_iso()
+    and calendar_sync). A remote Claude connector, however, often sends a
+    timestamp carrying a UTC offset (…Z / +00:00). Comparing that against a
+    naive datetime.now() used to crash, and even when it parsed, the stored
+    value was an hour (or more) off. So any timezone-aware input is converted
+    to the server's local time and stripped of tzinfo — matching the
+    calendar_sync convention — before it's stored or compared."""
+    when = (when or '').strip()
+    if not when:
+        return None
+    fire_at = None
+    try:
+        # datetime.fromisoformat only learned to read a 'Z' suffix in 3.11;
+        # normalise it so older interpreters parse UTC timestamps too.
+        fire_at = datetime.fromisoformat(when.replace('Z', '+00:00'))
+    except ValueError:
+        try:
+            import dateparser
+            fire_at = dateparser.parse(
+                when, settings={'PREFER_DATES_FROM': 'future'})
+        except ImportError:
+            pass
+    if fire_at is None:
+        return None
+    if fire_at.tzinfo is not None:
+        fire_at = fire_at.astimezone().replace(tzinfo=None)
+    return fire_at
+
+
+def _human_time(fire_at):
+    return fire_at.strftime('%A, %B %-d at %-I:%M %p')
+
+
 def _tool_add_note(user, args):
     content = (args.get('content') or '').strip()
     if not content:
         raise ToolError('content is required and cannot be empty.')
-    tags = ['CLAUDE'] + sms.extract_hashtags(content) + \
+
+    # Validate the optional reminder time up front so we never half-create a
+    # note (note saved, then the reminder rejected as malformed/past).
+    fire_at = None
+    remind_at = (args.get('remind_at') or '').strip()
+    if remind_at:
+        fire_at = _parse_when(remind_at)
+        if not fire_at:
+            raise ToolError(
+                f'Could not understand the reminder time "{remind_at}". Try an '
+                'ISO timestamp like 2026-06-13T09:00 or natural language like '
+                '"tomorrow at 9am".')
+        if fire_at <= datetime.now():
+            raise ToolError(f'"{remind_at}" reads as a past time '
+                            f'({fire_at.isoformat(timespec="minutes")}) — '
+                            'reminders must be in the future.')
+
+    tags = sms.extract_hashtags(content) + \
         [str(t) for t in (args.get('tags') or [])]
     tags = list(dict.fromkeys(t.upper() for t in tags if t))
     feed = 'shared' if (args.get('shared') or 'SHARED' in tags) else 'private'
@@ -59,10 +113,18 @@ def _tool_add_note(user, args):
     note = db.update_note(note['id'], filename=filename)
     sse.push_note_event('note_created', note)
 
+    reminder_line = ''
+    if fire_at:
+        db.create_reminder(user['id'], content.split('\n')[0][:120],
+                           fire_at.isoformat(timespec='seconds'),
+                           notify_sms=True, notify_web=True, note_id=note['id'])
+        reminder_line = f' Reminder set for {_human_time(fire_at)}.'
+
     title = content.split('\n')[0][:60]
     extras = f' with {len(todos)} checklist items' if todos else ''
-    return (f'Saved note "{title}"{extras} to the {feed} feed '
-            f"(tags: {', '.join(tags)}).")
+    tag_note = f" (tags: {', '.join(tags)})" if tags else ''
+    return (f'Saved note "{title}"{extras} to the {feed} feed{tag_note}.'
+            + reminder_line)
 
 
 def _tool_add_reminder(user, args):
@@ -71,16 +133,7 @@ def _tool_add_reminder(user, args):
     if not when or not message:
         raise ToolError('Both "when" and "message" are required.')
 
-    fire_at = None
-    try:
-        fire_at = datetime.fromisoformat(when)
-    except ValueError:
-        try:
-            import dateparser
-            fire_at = dateparser.parse(
-                when, settings={'PREFER_DATES_FROM': 'future'})
-        except ImportError:
-            pass
+    fire_at = _parse_when(when)
     if not fire_at:
         raise ToolError(f'Could not understand the time "{when}". Try an ISO '
                         'timestamp like 2026-06-13T09:00 or natural language '
@@ -93,8 +146,7 @@ def _tool_add_reminder(user, args):
     db.create_reminder(user['id'], message,
                        fire_at.isoformat(timespec='seconds'),
                        notify_sms=True, notify_web=True)
-    human = fire_at.strftime('%A, %B %-d at %-I:%M %p')
-    return f'Reminder set for {human}: "{message}"'
+    return f'Reminder set for {_human_time(fire_at)}: "{message}"'
 
 
 def _format_notes(notes):
@@ -146,7 +198,9 @@ TOOLS = [
      'description': ('Save a new note to Remndrs. Use when the user asks to '
                      'save, jot down, or remember something. Hashtags in the '
                      'content (#likethis) automatically become tags. The first '
-                     'line becomes the note title.'),
+                     'line becomes the note title. Pass remind_at to attach a '
+                     'date and time to the note — it schedules a reminder for '
+                     'the note (in the app, and by SMS if configured).'),
      'inputSchema': {'type': 'object', 'properties': {
          'content': {'type': 'string',
                      'description': 'Note text (Markdown supported).'},
@@ -160,7 +214,14 @@ TOOLS = [
          'todo_items': {'type': 'array', 'items': {'type': 'string'},
                         'description': 'Optional checklist items; providing '
                                        'any turns the note into a todo list '
-                                       '(content becomes its title).'}},
+                                       '(content becomes its title).'},
+         'remind_at': {'type': 'string',
+                       'description': 'Optional date and time to be reminded '
+                                      'about this note: ISO 8601 '
+                                      '("2026-06-13T09:00") or natural '
+                                      'language ("tomorrow at 9am"). Must be '
+                                      'in the future; UTC/offset times are '
+                                      "converted to the user's local time."}},
          'required': ['content']}},
     {'name': 'add_reminder',
      'description': ('Set a reminder that notifies the user in the app (and '
@@ -169,10 +230,12 @@ TOOLS = [
                      "user's local timezone."),
      'inputSchema': {'type': 'object', 'properties': {
          'when': {'type': 'string',
-                  'description': 'When to fire: ISO 8601 local time '
+                  'description': 'When to fire: ISO 8601 '
                                  '("2026-06-13T09:00") or natural language '
                                  '("tomorrow at 9am", "Friday 3pm"). Must be '
-                                 'in the future.'},
+                                 'in the future. Naive times are read in the '
+                                 "user's local timezone; UTC/offset times "
+                                 '(e.g. with a Z suffix) are converted to it.'},
          'message': {'type': 'string',
                      'description': 'What to remind the user about.'}},
          'required': ['when', 'message']}},

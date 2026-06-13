@@ -106,6 +106,38 @@ def test_tool_add_note_shared_flag_routes_feed(make_user):
     assert db.list_notes(user['id'])[0]['feed'] == 'shared'
 
 
+def test_tool_add_note_does_not_auto_tag_claude(make_user):
+    user = make_user('Clay')
+    mcp._tool_add_note(user, {'content': 'just a thought'})
+    note = db.recent_notes(user['id'])[0]
+    # The Claude channel pill comes from source='claude'; no CLAUDE tag needed.
+    assert [t['name'] for t in note['tags']] == []
+    assert note['source'] == 'claude'
+
+
+def test_tool_add_note_with_remind_at_creates_linked_reminder(make_user):
+    user = make_user('Clay')
+    out = mcp._tool_add_note(user, {'content': 'call the dentist',
+                                    'remind_at': '2099-01-01T09:00'})
+    assert 'Reminder set' in out
+    note = db.recent_notes(user['id'])[0]
+    pending = db.list_reminders(user['id'])
+    assert pending and pending[0]['note_id'] == note['id']
+    assert pending[0]['message'] == 'call the dentist'
+
+
+def test_tool_add_note_rejects_past_remind_at_without_saving(make_user):
+    user = make_user('Clay')
+    try:
+        mcp._tool_add_note(user, {'content': 'too late',
+                                  'remind_at': '2000-01-01T00:00'})
+        assert False, 'expected ToolError'
+    except mcp.ToolError:
+        pass
+    # The note must not be half-created when the reminder time is rejected.
+    assert db.recent_notes(user['id']) == []
+
+
 def test_tool_search_requires_query(make_user):
     user = make_user('Clay')
     try:
@@ -137,3 +169,30 @@ def test_tool_add_reminder_accepts_future_iso(make_user):
     assert 'party' in out
     pending = db.list_reminders(user['id'])  # unfired reminders for this user
     assert pending and pending[0]['message'] == 'party'
+
+
+# ── _parse_when timezone handling ──────────────────────────────────────────
+
+def test_parse_when_naive_is_left_local():
+    dt = mcp._parse_when('2099-01-01T09:00')
+    assert dt.tzinfo is None
+    assert (dt.year, dt.month, dt.day, dt.hour) == (2099, 1, 1, 9)
+
+
+def test_parse_when_converts_utc_to_local_naive():
+    from datetime import datetime, timezone
+    dt = mcp._parse_when('2099-06-13T17:00:00Z')
+    # Result is naive local wall-clock, matching the calendar_sync convention.
+    assert dt.tzinfo is None
+    expected = datetime(2099, 6, 13, 17, tzinfo=timezone.utc).astimezone()
+    assert (dt.hour, dt.minute) == (expected.hour, expected.minute)
+
+
+def test_parse_when_offset_does_not_crash_comparison(make_user):
+    # A timezone-aware "when" used to raise (aware vs naive datetime.now());
+    # it should now parse and store cleanly.
+    user = make_user('Clay')
+    out = mcp._tool_add_reminder(
+        user, {'when': '2099-01-01T09:00:00+00:00', 'message': 'sync'})
+    assert 'sync' in out
+    assert db.list_reminders(user['id'])
