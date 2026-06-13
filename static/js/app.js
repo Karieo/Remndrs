@@ -805,7 +805,16 @@ async function addPerson(){
 function renderWebhooks(body){
   const publicURL = (settingsData.PUBLIC_URL && settingsData.PUBLIC_URL.value || '').replace(/\/$/,'');
   const base = publicURL || 'https://your-tunnel-url';
+  const tz = (settingsData.TIMEZONE && settingsData.TIMEZONE.value) || '';
+  const guessTz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   body.innerHTML = `
+    <div class="set-section">
+      <div class="set-h">Time zone</div>
+      <div class="set-sub">The zone Remndrs stamps notes and fires reminders in. Set this if your notes show the wrong time — it overrides the server machine's clock zone. Use an IANA name like <code>America/New_York</code>.${guessTz?` This browser looks like <code>${esc(guessTz)}</code>.`:''}</div>
+      <div class="set-row"><div class="field" style="margin:0"><input id="env-TIMEZONE" value="${esc(tz)}" placeholder="${esc(guessTz||'America/New_York')}"></div></div>
+      <div class="set-test"><button class="sx" onclick="saveTimezone()">Save</button>${guessTz?`<button class="sx" onclick="document.getElementById('env-TIMEZONE').value='${esc(guessTz)}'">Use this browser's</button>`:''}<span class="set-test-result" id="tz-result"></span></div>
+    </div>
+    <div class="set-divider"></div>
     <div class="set-section">
       <div class="set-h">Public URL</div>
       <div class="set-sub">Your Cloudflare Tunnel address (see CLOUDFLARE_SETUP.md). Saving it fills in the webhook URLs below — paste those into the Twilio / Mailgun consoles.</div>
@@ -829,6 +838,14 @@ async function savePublicURL(){
   out.className='set-test-result ok'; out.textContent='saved ✓';
   settingsData = await api('/api/settings');
   renderWebhooks(document.getElementById('settingsBody'));
+}
+async function saveTimezone(){
+  const out = document.getElementById('tz-result');
+  const value = document.getElementById('env-TIMEZONE').value.trim();
+  if (!value){ out.className='set-test-result bad'; out.textContent='enter a zone'; return; }
+  await api('/api/settings', { method:'PATCH', body: JSON.stringify({ TIMEZONE: value }) });
+  out.className='set-test-result ok'; out.textContent='saved ✓ — new notes use this zone';
+  settingsData = await api('/api/settings').catch(()=>settingsData);
 }
 function copyText(text){
   if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});

@@ -486,6 +486,7 @@ Everything lives in `.env` (created from `.env.example` by the installer):
 | `SESSION_SECRET` | yes (generated) | Signs login cookies |
 | `OWNER_NAME` / `OWNER_PASSWORD` | yes (prompted) | Seeds the owner account on first run |
 | `NOTES_FOLDER` | no | Where `.md` files go (default: iCloud Drive `Remndrs/`) |
+| `TIMEZONE` | no | IANA zone (e.g. `America/New_York`) used to stamp notes and fire reminders. Defaults to the host clock's zone; set it if notes show the wrong time. Editable in ⚙ Settings → Webhooks. |
 | `PORT` | no | Default 3000; falls back to 3001/3002 if busy |
 | `ENCRYPTION_KEY` | yes (generated) | Encrypts stored CalDAV passwords (Fernet) |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | for SMS/voice | Twilio credentials |
