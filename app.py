@@ -16,6 +16,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def apply_timezone():
+    """Pin the process timezone from the TIMEZONE setting.
+
+    Remndrs stores naive local wall-clock times everywhere (created_at, reminder
+    fire_at, calendar windows, date search), so "local" means whatever timezone
+    the host's clock is set to. When the host is on the wrong zone (a Pi, a
+    container, or a cloud box defaulting to UTC), every timestamp lands hours
+    off — notes appear in the future, reminders fire early. Setting TIMEZONE
+    (an IANA name like "America/New_York") makes the app use that zone for
+    datetime.now() regardless of the host, so the install isn't at the mercy of
+    the system clock's zone. Unset → keep the host zone (the prior behaviour)."""
+    tz = os.getenv('TIMEZONE', '').strip()
+    if not tz:
+        return
+    os.environ['TZ'] = tz
+    try:
+        time.tzset()  # Unix only; Windows keeps the system zone.
+    except AttributeError:
+        logging.getLogger('remndrs').warning(
+            'TIMEZONE set but time.tzset() is unavailable on this OS')
+
+
+apply_timezone()
+
 import bcrypt
 import requests as http
 from flask import (Flask, Response, jsonify, redirect, render_template,
@@ -364,6 +389,7 @@ SETTINGS_KEYS = {
     'CALDAV_PASSWORD': True,
     'TELEGRAM_BOT_TOKEN': True,
     'PUBLIC_URL': False,
+    'TIMEZONE': False,
 }
 
 ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
@@ -446,6 +472,8 @@ def api_update_settings():
                if k in SETTINGS_KEYS and str(v).strip() != ''}
     if updates:
         _write_env(updates)
+        if 'TIMEZONE' in updates:
+            apply_timezone()  # take effect now, not just on restart
         log.info('Settings updated: %s', ', '.join(updates))
     return jsonify({'success': True, 'updated': sorted(updates)})
 

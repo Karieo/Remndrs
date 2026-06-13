@@ -648,18 +648,32 @@ function closeSettings(){ document.getElementById('settingsOverlay').classList.r
 async function renderSettings(){
   settingsData = await api('/api/settings').catch(()=>null);
   const tabs = settingsData
-    ? [['integrations','Integrations'],['people','People'],['webhooks','Webhooks'],['calendars','Calendars']]
+    ? [['general','General'],['integrations','Integrations'],['people','People'],['webhooks','Webhooks'],['calendars','Calendars']]
     : [['people','People'],['calendars','Calendars']];
   if (!tabs.some(t=>t[0]===settingsTab)) settingsTab = tabs[0][0];
   document.getElementById('settingsNav').innerHTML = tabs.map(([k,label])=>
     `<button class="${settingsTab===k?'active':''}" onclick="setSettingsTab('${k}')">${label}</button>`).join('');
   const body = document.getElementById('settingsBody');
-  if (settingsTab === 'integrations') renderIntegrations(body);
+  if (settingsTab === 'general') renderGeneral(body);
+  else if (settingsTab === 'integrations') renderIntegrations(body);
   else if (settingsTab === 'people') renderPeopleSettings(body);
   else if (settingsTab === 'webhooks') renderWebhooks(body);
   else renderCalendarSettings(body);
 }
 function setSettingsTab(tab){ settingsTab = tab; renderSettings(); }
+
+/* — General — */
+function renderGeneral(body){
+  const tz = (settingsData.TIMEZONE && settingsData.TIMEZONE.value) || '';
+  const guessTz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  body.innerHTML = `
+    <div class="set-section">
+      <div class="set-h">Time zone</div>
+      <div class="set-sub">The zone Remndrs stamps notes and fires reminders in. Set this if your notes show the wrong time — it overrides the server machine's clock zone. Use an IANA name like <code>America/Chicago</code>.${guessTz?` This browser looks like <code>${esc(guessTz)}</code>.`:''}</div>
+      <div class="set-row"><div class="field" style="margin:0"><input id="env-TIMEZONE" value="${esc(tz)}" placeholder="${esc(guessTz||'America/Chicago')}"></div></div>
+      <div class="set-test"><button class="sx" onclick="saveTimezone()">Save</button>${guessTz?`<button class="sx" onclick="document.getElementById('env-TIMEZONE').value='${esc(guessTz)}'">Use this browser's</button>`:''}<span class="set-test-result" id="tz-result"></span></div>
+    </div>`;
+}
 
 /* — Integrations — */
 const SERVICES = [
@@ -829,6 +843,14 @@ async function savePublicURL(){
   out.className='set-test-result ok'; out.textContent='saved ✓';
   settingsData = await api('/api/settings');
   renderWebhooks(document.getElementById('settingsBody'));
+}
+async function saveTimezone(){
+  const out = document.getElementById('tz-result');
+  const value = document.getElementById('env-TIMEZONE').value.trim();
+  if (!value){ out.className='set-test-result bad'; out.textContent='enter a zone'; return; }
+  await api('/api/settings', { method:'PATCH', body: JSON.stringify({ TIMEZONE: value }) });
+  out.className='set-test-result ok'; out.textContent='saved ✓ — new notes use this zone';
+  settingsData = await api('/api/settings').catch(()=>settingsData);
 }
 function copyText(text){
   if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
