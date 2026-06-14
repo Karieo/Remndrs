@@ -355,7 +355,8 @@ button { font-family:inherit; }
 .reminder-banner { display:flex; align-items:center; gap:10px; background:color-mix(in srgb,var(--accent) 16%,var(--bg)); border-bottom:1px solid var(--accent); padding:9px 24px; font-size:13px; }
 .reminder-banner .rb-icon { color:var(--accent); display:flex; }
 .reminder-banner .rb-icon svg { width:14px; height:14px; }
-.reminder-banner button { margin-left:auto; }
+.reminder-banner .rb-msg { flex:1; min-width:0; }
+.reminder-banner .rb-actions { display:flex; gap:6px; margin-left:auto; flex-shrink:0; }
 
 /* ─── Composer ─────────────────────────────────────────────── */
 .composer-overlay { position:fixed; inset:0; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:80px 20px 20px; backdrop-filter:blur(3px); overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }

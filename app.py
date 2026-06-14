@@ -802,6 +802,47 @@ def api_create_reminder():
     return jsonify(reminder), 201
 
 
+def _snooze_fire_at(data):
+    """Resolve a snooze request to a naive-local ISO fire time, or None if the
+    request is malformed. Presets are computed from the server clock so they
+    match the wall-clock zone reminders fire in (the browser's zone may differ)."""
+    minutes = data.get('minutes')
+    if minutes is not None:
+        try:
+            mins = int(minutes)
+        except (TypeError, ValueError):
+            return None
+        return ((datetime.now() + timedelta(minutes=mins)).isoformat(timespec='seconds')
+                if mins > 0 else None)
+    now = datetime.now()
+    preset = (data.get('preset') or '').strip().lower()
+    if preset == '1h':
+        target = now + timedelta(hours=1)
+    elif preset == 'tonight':
+        target = now.replace(hour=18, minute=0, second=0, microsecond=0)
+        if target <= now:                       # already evening — just give an hour
+            target = now + timedelta(hours=1)
+    elif preset == 'tomorrow':
+        target = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0,
+                                                   microsecond=0)
+    else:
+        return None
+    return target.isoformat(timespec='seconds')
+
+
+@app.route('/api/reminders/<rem_id>/snooze', methods=['POST'])
+def api_snooze_reminder(rem_id):
+    reminder = db.get_reminder(rem_id)
+    if not reminder or reminder['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    fire_at = _snooze_fire_at(request.get_json(silent=True) or {})
+    if not fire_at:
+        return jsonify({'error': 'Provide a positive "minutes" or a "preset" '
+                        'of 1h/tonight/tomorrow'}), 400
+    db.snooze_reminder(rem_id, fire_at)
+    return jsonify(db.get_reminder(rem_id))
+
+
 @app.route('/api/reminders/<rem_id>/dismiss', methods=['POST'])
 def api_dismiss_reminder(rem_id):
     reminder = db.get_reminder(rem_id)
