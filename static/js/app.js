@@ -192,7 +192,9 @@ function cardHTML(n) {
       <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
     </div>`;
   const outgoing = activeFeed === 'shared' && shareSenderId(n) === ME.id;
-  return `<div class="card editable ${n.pinned?'pinned':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}" onclick="editNote('${n.id}')" title="Click to edit">
+  const sel = selectMode && selectedIds.has(n.id);
+  return `<div class="card editable ${n.pinned?'pinned':''} ${selectMode?'selecting':''} ${sel?'selected':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}" onclick="onCardClick('${n.id}')" title="${selectMode?'Click to select':'Click to edit'}">
+    ${selectMode ? `<span class="select-check">${svg('check',12)}</span>` : ''}
     ${header}
     ${tagsRow}
     ${noteBodyHTML(n)}
@@ -368,6 +370,51 @@ function dropdownHTML(n) {
     <div class="dd-item" onclick="archiveNote('${n.id}', ${n.archived?'false':'true'})"><span class="di">${svg('archive')}</span> ${n.archived?'Restore':'Archive'}</div>
     <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
   </div>`;
+}
+
+/* ─── Bulk multi-select ────────────────────────────────────── */
+let selectMode = false, selectedIds = new Set();
+function onCardClick(id){ selectMode ? toggleSelect(id) : editNote(id); }
+function toggleSelectMode(){
+  selectMode = !selectMode;
+  selectedIds.clear();
+  document.getElementById('selectBtn')?.classList.toggle('active', selectMode);
+  renderCards();
+  renderBulkBar();
+}
+function toggleSelect(id){
+  selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
+  document.querySelector(`.card[data-id="${id}"]`)?.classList.toggle('selected', selectedIds.has(id));
+  renderBulkBar();
+}
+function renderBulkBar(){
+  const bar = document.getElementById('bulkBar');
+  if (!bar) return;
+  bar.hidden = !selectMode;
+  const n = selectedIds.size;
+  const count = document.getElementById('bulkCount');
+  if (count) count.textContent = `${n} selected`;
+  bar.querySelectorAll('.bulk-act').forEach(b => b.disabled = !n);
+}
+async function bulkPatch(body){
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  for (const id of ids) await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify(body) }).catch(()=>{});
+  afterBulk(ids.length);
+}
+function bulkMove(feed){ bulkPatch({ feed }); }
+function bulkArchive(){ bulkPatch({ archived: activeFeed !== 'archived' }); }
+async function bulkDelete(){
+  const ids = [...selectedIds];
+  if (!ids.length || !confirm(`Delete ${ids.length} note${ids.length>1?'s':''}?`)) return;
+  for (const id of ids) await api('/api/notes/'+id, { method:'DELETE' }).catch(()=>{});
+  afterBulk(ids.length, 'Deleted');
+}
+function afterBulk(n, verb){
+  selectedIds.clear();
+  toast(`${verb||'Updated'} ${n} note${n>1?'s':''}`);
+  renderBulkBar();
+  loadNotes();
 }
 
 /* ─── Attachment management ────────────────────────────────── */
