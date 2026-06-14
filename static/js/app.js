@@ -975,6 +975,28 @@ async function refreshReminderCount(){
   badge.hidden = !rems.length;
   return rems;
 }
+function buildDigestOptions(selected){
+  const sel = document.getElementById('digestHour');
+  if (!sel) return;
+  const opts = ['<option value="">Off</option>'];
+  for (let h = 0; h < 24; h++){
+    const label = new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric' });
+    opts.push(`<option value="${h}"${String(selected) === String(h) ? ' selected' : ''}>${label}</option>`);
+  }
+  sel.innerHTML = opts.join('');
+}
+async function loadDigestHour(){
+  const me = await api('/api/users/me').catch(() => null);
+  buildDigestOptions(me && me.digest_hour != null ? me.digest_hour : '');
+}
+async function saveDigestHour(val){
+  await api('/api/users/me',
+            { method:'PATCH', body: JSON.stringify({ digest_hour: val === '' ? null : Number(val) }) }).catch(()=>{});
+  toast(val === '' ? 'Daily digest off' : 'Daily digest scheduled');
+}
+async function openReminders(){
+  document.getElementById('remindersOverlay').classList.add('open');
+  loadDigestHour();
 function recurrenceLabel(rrule){
   return ({
     'FREQ=DAILY': 'daily', 'FREQ=WEEKLY': 'weekly', 'FREQ=MONTHLY': 'monthly',

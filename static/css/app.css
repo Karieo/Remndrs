@@ -291,6 +291,11 @@ button { font-family:inherit; }
 .rem-del { flex-shrink:0; }
 .rem-empty { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted);
   padding:18px 0; text-align:center; }
+.rem-digest { padding-top:12px; margin-bottom:12px; border-top:1px solid var(--border); }
+.rem-digest-label { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); }
+.rem-digest-label select { background:var(--surface-2); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:4px 8px; outline:none; }
+.rem-digest-hint { display:block; margin-top:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
 .rem-push { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   padding-top:12px; margin-bottom:12px; border-top:1px solid var(--border); }
 .rem-push-hint { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
