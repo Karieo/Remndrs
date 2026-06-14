@@ -93,7 +93,10 @@ def _note_body(note):
     body = note.get('content', '') or ''
     todos = note.get('todos') or []
     if todos:
-        lines = [f'- [{"x" if t["checked"] else " "}] {t["text"]}' for t in todos]
+        lines = [
+            f'- [{"x" if t["checked"] else " "}] {t["text"]}'
+            + (f' 📅 {t["due_at"]}' if t.get('due_at') else '')
+            for t in todos]
         body = (body + '\n\n' if body.strip() else '') + '\n'.join(lines)
     replies = note.get('replies') or []
     if replies:

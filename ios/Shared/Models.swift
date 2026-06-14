@@ -86,8 +86,20 @@ struct TodoItem: Codable, Hashable {
     let id: String?
     var text: String
     var checked: Bool
+    /// Optional per-item due date (naive local ISO). Optional so older servers
+    /// and notes without due dates still decode.
+    var dueAt: String?
 
-    enum CodingKeys: String, CodingKey { case id, text, checked }
+    enum CodingKeys: String, CodingKey {
+        case id, text, checked
+        case dueAt = "due_at"
+    }
+
+    var dueDate: Date? {
+        guard let d = dueAt, !d.isEmpty else { return nil }
+        return RemndrsDate.parse(d)
+    }
+    var isOverdue: Bool { !checked && (dueDate.map { $0 < Date() } ?? false) }
 }
 
 struct AttachmentRef: Codable, Hashable {

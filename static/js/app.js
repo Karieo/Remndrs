@@ -182,13 +182,23 @@ function toggleTag(name){ activeTags.has(name)?activeTags.delete(name):activeTag
 function tagColor(name) { return (tags.find(t => t.name === name) || {}).color || CH.app.c; }
 function accentOf(n) { return n.pinned ? null : (n.tags[0] ? n.tags[0].color : CH.app.c); }
 
+function todoDueBadge(t){
+  if (!t.due_at) return '';
+  const due = new Date(t.due_at);
+  if (isNaN(due)) return '';
+  const hasTime = t.due_at.length > 10 && !/T00:00/.test(t.due_at);
+  const label = due.toLocaleDateString([], { month:'short', day:'numeric' })
+    + (hasTime ? ' ' + due.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '');
+  const overdue = !t.checked && due.getTime() < Date.now();
+  return `<span class="todo-due ${overdue?'overdue':''}" title="Due ${esc(t.due_at)}">${svg('cal',10)} ${esc(label)}</span>`;
+}
 function noteBodyHTML(n) {
   if (n.type === 'todo' && n.todos.length) {
     const done = n.todos.filter(t => t.checked).length, total = n.todos.length;
     return `<div class="todo-title">${esc(n.content.split('\n')[0])}</div>
       <div class="todo-progress-row"><span class="todo-progress-label">${done} / ${total}</span>
       <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${done/total*100}%"></div></div></div>
-      ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span></label>`).join('')}`;
+      ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span>${todoDueBadge(t)}</label>`).join('')}`;
   }
   let html = `<div class="card-body">${md(n.content)}</div>`;
   const url = (n.content.match(/https?:\/\/[^\s)>\]]+/) || [])[0];
@@ -734,7 +744,7 @@ async function deleteNote(id){
 }
 async function toggleTodo(noteId, todoId){
   const n = notes.find(x=>x.id===noteId);
-  const todos = n.todos.map(t => ({ text:t.text, checked: t.id===todoId ? !t.checked : t.checked }));
+  const todos = n.todos.map(t => ({ text:t.text, checked: t.id===todoId ? !t.checked : t.checked, due_at: t.due_at }));
   await api('/api/notes/'+noteId, { method:'PATCH', body: JSON.stringify({ todos }) });
   loadNotes();
 }
@@ -1167,7 +1177,7 @@ let composerMode = 'note', composerFeed = 'private', editingNoteId = null;
 let composerAttachments = [];
 const PLACEHOLDERS = {
   note: "What's on your mind…\n\nWrite freely. #tags are pulled out automatically.",
-  todo: "Title on the first line…\nThen one task per line ([x] marks done).\n\n#tags work here too.",
+  todo: "Title on the first line…\nThen one task per line ([x] marks done).\nAdd @2026-07-01 to a line to set a due date.\n\n#tags work here too.",
 };
 
 function openComposer(){
@@ -1286,7 +1296,7 @@ function editNote(id){
   let text;
   if (n.type === 'todo') {
     const lines = [n.content.split('\n')[0]];
-    for (const t of n.todos) lines.push(`${t.checked ? '[x] ' : ''}${t.text}`);
+    for (const t of n.todos) lines.push(`${t.checked ? '[x] ' : ''}${t.text}${t.due_at ? ' @'+t.due_at.slice(0,16).replace('T',' ').replace(/ 00:00$/,'') : ''}`);
     text = lines.join('\n');
   } else {
     text = n.content;
@@ -1376,8 +1386,13 @@ async function saveNote(){
     body.content = lines.shift() || 'Untitled list';
     body.todos = lines.map(l=>{
       const m = l.match(/^\[( |x|X)\]\s*(.*)$/);
-      return m ? { text: m[2], checked: m[1].toLowerCase()==='x' }
-               : { text: l, checked: false };
+      let text = m ? m[2] : l;
+      const checked = m ? m[1].toLowerCase()==='x' : false;
+      // Trailing "@YYYY-MM-DD" (optionally with HH:MM) sets a due date.
+      let due_at = null;
+      const dm = text.match(/\s@(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?)\s*$/);
+      if (dm){ due_at = dm[1].replace(' ', 'T'); text = text.slice(0, dm.index).trim(); }
+      return { text, checked, due_at };
     });
   } else {
     body.type = 'note';

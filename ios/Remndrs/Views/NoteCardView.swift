@@ -325,6 +325,16 @@ struct NoteCardView: View {
                             .strikethrough(todo.checked)
                             .foregroundStyle(todo.checked ? Theme.textFaint : Theme.text)
                             .multilineTextAlignment(.leading)
+                        if let due = todo.dueDate {
+                            Spacer(minLength: 6)
+                            HStack(spacing: 3) {
+                                Image(systemName: "calendar").font(.system(size: 9))
+                                Text(due, style: .date).font(.system(size: 9, weight: .semibold))
+                            }
+                            .foregroundStyle(todo.isOverdue ? .red : Theme.textMuted)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                        }
                     }
                     .padding(.vertical, 5)
                 }
