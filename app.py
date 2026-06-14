@@ -123,7 +123,10 @@ mcp_server.SERVER_VERSION = VERSION
 
 @app.context_processor
 def inject_version():
-    return {'app_version': VERSION_LABEL}
+    # asset_version busts the browser/CDN cache for static JS/CSS on every
+    # deploy, so a fix can never be hidden behind a stale cached app.js. Uses
+    # the git short SHA (falls back to the version string).
+    return {'app_version': VERSION_LABEL, 'asset_version': _GIT_SHA or VERSION}
 
 
 # ── Bootstrap ────────────────────────────────────────────
