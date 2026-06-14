@@ -983,6 +983,7 @@ function recurrenceLabel(rrule){
 }
 async function openReminders(){
   document.getElementById('remindersOverlay').classList.add('open');
+  refreshPushButton();
   const list = document.getElementById('remindersList');
   list.innerHTML = '<div class="rem-empty">Loading…</div>';
   const rems = await refreshReminderCount();
@@ -1265,3 +1266,4 @@ refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});
 refreshReminderCount();
+initPush();
