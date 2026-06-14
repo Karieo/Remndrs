@@ -30,10 +30,12 @@ SERVER_VERSION = '0'  # app.py injects its VERSION after import
 INSTRUCTIONS = (
     "Remndrs is the user's personal notes and reminders app. Use add_note to "
     "save notes (#hashtags in the content become tags), add_reminder for "
-    "time-based reminders, list_reminders to see upcoming ones, and "
-    "search_notes / recent_notes / get_notes_by_tag to find notes (each "
-    "result carries an '(id: …)'); pass that id to get_note to read a note in "
-    "full or to update_note to edit it. To attach a file (a Markdown/.md "
+    "time-based reminders, list_reminders / delete_reminder to see and cancel "
+    "upcoming ones, list_tags to see tags in use, and search_notes / "
+    "recent_notes / get_notes_by_tag to find notes (each result carries an "
+    "'(id: …)'); pass that id to get_note to read a note in full, to "
+    "update_note to edit it, or to complete_todo to check off a checklist "
+    "item. To attach a file (a Markdown/.md "
     "document, PDF, image, etc.) to a note, use attach_file — pass the file's "
     "body rather than pasting its contents into add_note, so it's saved as a "
     "real attachment. Times are in the user's local timezone.")
@@ -308,6 +310,76 @@ def _tool_update_note(user, args):
     return f'Updated note "{title}" in the {note["feed"]} feed.'
 
 
+def _tool_complete_todo(user, args):
+    note_id = (args.get('note_id') or '').strip()
+    if not note_id:
+        raise ToolError('note_id is required.')
+    note = db.get_note(note_id)
+    if not note or note['user_id'] != user['id']:
+        raise ToolError(f'No note with id "{note_id}" that you own.')
+    todos = note['todos']
+    if not todos:
+        raise ToolError('That note has no checklist items.')
+
+    # Identify the item by 1-based index or by matching its text.
+    index = args.get('index')
+    item_text = (args.get('item') or '').strip()
+    if index is not None:
+        try:
+            i = int(index)
+        except (TypeError, ValueError):
+            raise ToolError('index must be a number (1-based).')
+        if not 1 <= i <= len(todos):
+            raise ToolError(f'index {i} is out of range — the note has '
+                            f'{len(todos)} item(s).')
+        target = todos[i - 1]
+    elif item_text:
+        matches = [t for t in todos if item_text.lower() in t['text'].lower()]
+        if not matches:
+            raise ToolError(f'No checklist item matching "{item_text}".')
+        if len(matches) > 1:
+            names = ', '.join(f'"{t["text"]}"' for t in matches)
+            raise ToolError(f'"{item_text}" matches several items ({names}); '
+                            'be more specific or use index.')
+        target = matches[0]
+    else:
+        raise ToolError('Specify which item with "item" (its text) or "index" '
+                        '(1-based position).')
+
+    checked = bool(args.get('checked', True))
+    target['checked'] = checked
+    # replace_todos rewrites the whole list; todos are already in position order.
+    db.replace_todos(note_id, [{'text': t['text'], 'checked': t['checked']}
+                               for t in todos])
+    note = db.get_note(note_id)
+    files.write_note_file(note, user['name'])
+    sse.push_note_event('note_updated', note)
+
+    done = sum(1 for t in note['todos'] if t['checked'])
+    state = 'Checked off' if checked else 'Unchecked'
+    return (f'{state} "{target["text"]}" — {done}/{len(note["todos"])} done '
+            f'on this list.')
+
+
+def _tool_list_tags(user, args):
+    tags = [t for t in db.list_tags() if t.get('count')]
+    if not tags:
+        return 'No tags in use yet.'
+    lines = ', '.join(f"#{t['name']} ({t['count']})" for t in tags)
+    return f'{len(tags)} tag(s) in use:\n{lines}'
+
+
+def _tool_delete_reminder(user, args):
+    rem_id = (args.get('reminder_id') or '').strip()
+    if not rem_id:
+        raise ToolError('reminder_id is required (get it from list_reminders).')
+    rem = db.get_reminder(rem_id)
+    if not rem or rem['user_id'] != user['id']:
+        raise ToolError(f'No reminder with id "{rem_id}" that you own.')
+    db.delete_reminder(rem_id)
+    return f'Deleted reminder: "{rem["message"]}".'
+
+
 def _format_notes(notes):
     lines = []
     for n in notes:
@@ -511,8 +583,38 @@ TOOLS = [
     {'name': 'list_reminders',
      'description': ("List the user's upcoming (not-yet-fired) reminders, "
                      'soonest first. Use to answer questions like "what '
-                     'reminders do I have?"'),
+                     'reminders do I have?" Each result carries an "(id: …)" '
+                     'for delete_reminder.'),
      'inputSchema': {'type': 'object', 'properties': {}, 'required': []}},
+    {'name': 'complete_todo',
+     'description': ('Check off (or uncheck) an item on a to-do note. Find the '
+                     "note's id first; identify the item by its text or its "
+                     '1-based position in the list.'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'note_id': {'type': 'string',
+                     'description': 'The to-do note containing the item.'},
+         'item': {'type': 'string',
+                  'description': 'Text of the item to toggle (case-insensitive, '
+                                 'partial match allowed). Use this or index.'},
+         'index': {'type': 'integer',
+                   'description': "The item's 1-based position in the list. "
+                                  'Use this or item.'},
+         'checked': {'type': 'boolean',
+                     'description': 'True to check off (default), false to '
+                                    'uncheck.'}},
+         'required': ['note_id']}},
+    {'name': 'list_tags',
+     'description': ('List all tags currently in use with how many notes carry '
+                     'each, most-used first. Useful before tagging or to find '
+                     'a tag for get_notes_by_tag.'),
+     'inputSchema': {'type': 'object', 'properties': {}, 'required': []}},
+    {'name': 'delete_reminder',
+     'description': ('Cancel/delete a reminder by its id (get it from '
+                     'list_reminders).'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'reminder_id': {'type': 'string',
+                         'description': 'The reminder to delete.'}},
+         'required': ['reminder_id']}},
 ]
 
 TOOL_HANDLERS = {
@@ -525,6 +627,9 @@ TOOL_HANDLERS = {
     'get_note': _tool_get_note,
     'update_note': _tool_update_note,
     'list_reminders': _tool_list_reminders,
+    'complete_todo': _tool_complete_todo,
+    'list_tags': _tool_list_tags,
+    'delete_reminder': _tool_delete_reminder,
 }
 
 
