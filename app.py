@@ -798,7 +798,8 @@ def api_create_reminder():
         session['user_id'], data['message'], data['fire_at'],
         notify_sms=data.get('notify_sms', True),
         notify_web=data.get('notify_web', True),
-        note_id=data.get('note_id'))
+        note_id=data.get('note_id'),
+        recurrence=reminders.normalize_recurrence(data.get('recurrence')))
     return jsonify(reminder), 201
 
 

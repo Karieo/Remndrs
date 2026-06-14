@@ -387,6 +387,7 @@ button { font-family:inherit; }
 .composer-remind input[type=datetime-local] { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; color-scheme:dark; }
 :root[data-theme="light"] .composer-remind input[type=datetime-local] { color-scheme:light; }
 .composer-remind label { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
+.composer-remind .composer-repeat { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; }
 .composer-attach { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:0 16px 12px; }
 .composer-attach-btn { display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; letter-spacing:0.3px; padding:3px 9px; cursor:pointer; transition:all .15s; }
 .composer-attach-btn:hover { border-color:var(--border-2); color:var(--text-mid); }

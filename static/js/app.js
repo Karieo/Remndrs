@@ -975,6 +975,12 @@ async function refreshReminderCount(){
   badge.hidden = !rems.length;
   return rems;
 }
+function recurrenceLabel(rrule){
+  return ({
+    'FREQ=DAILY': 'daily', 'FREQ=WEEKLY': 'weekly', 'FREQ=MONTHLY': 'monthly',
+    'FREQ=YEARLY': 'yearly', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR': 'weekdays',
+  })[rrule] || 'repeats';
+}
 async function openReminders(){
   document.getElementById('remindersOverlay').classList.add('open');
   const list = document.getElementById('remindersList');
@@ -984,7 +990,7 @@ async function openReminders(){
   list.innerHTML = rems.map(r => `
     <div class="rem-row" data-rem="${r.id}">
       <div class="rem-text">
-        <div class="rem-when">${fmtDate(r.fire_at)}</div>
+        <div class="rem-when">${fmtDate(r.fire_at)}${r.recurrence ? ' · 🔁 '+esc(recurrenceLabel(r.recurrence)) : ''}</div>
         <div class="rem-msg">${esc(r.message)}</div>
       </div>
       <button class="sx rem-del" onclick="deleteReminder('${r.id}')" title="Cancel reminder">✕</button>
@@ -1181,6 +1187,7 @@ async function saveNote(){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
         fire_at: document.getElementById('remindAt').value + ':00',
+        recurrence: document.getElementById('remindRepeat').value || undefined,
         notify_web: true, notify_sms: true, note_id: note.id,
       }) });
       note.reminder = { fire_at: document.getElementById('remindAt').value + ':00' };
@@ -1189,6 +1196,8 @@ async function saveNote(){
     document.getElementById('remindOn').checked = false;
     document.getElementById('remindAt').hidden = true;
     document.getElementById('remindAt').value = '';
+    document.getElementById('remindRepeat').hidden = true;
+    document.getElementById('remindRepeat').value = '';
     const wasEditing = !!editingNoteId;
     editingNoteId = null;
     closeComposer();
