@@ -1,0 +1,33 @@
+# Remndrs on Linux / Jetson / Raspberry Pi / NAS.
+#
+#   cp .env.example .env     # then edit: SESSION_SECRET, OWNER_*, TIMEZONE
+#   docker compose up -d --build
+#
+# Open http://<host>:3000. All state lives under ./data on the host (easy to
+# back up); the mounted .env keeps runtime ⚙ Settings edits across restarts.
+services:
+  remndrs:
+    build: .
+    image: remndrs:latest
+    container_name: remndrs
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Deployment-specific overrides. NOTES_FOLDER overrides the Mac iCloud
+      # default in .env.example; everything else (secrets, integrations,
+      # TIMEZONE) comes from the mounted .env below.
+      - PORT=3000
+      - NOTES_FOLDER=/app/notes
+    volumes:
+      - ./data/db:/app/data          # SQLite DB (remndrs.db)
+      - ./data/uploads:/app/uploads  # web/MMS/email file uploads
+      - ./data/notes:/app/notes      # the Obsidian-compatible .md notes
+      - ./.env:/app/.env             # secrets + runtime-editable settings (persisted)
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:3000/api/version')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

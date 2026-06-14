@@ -1,0 +1,17 @@
+# Build context excludes — keep the image small and never bake in local state/secrets.
+.git
+.gitignore
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+data/
+uploads/
+notes/
+ios/
+tests/
+.env
+*.db
+.DS_Store
+*.log
