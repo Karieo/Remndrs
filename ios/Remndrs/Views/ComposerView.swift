@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 
 struct ComposerView: View {
     @EnvironmentObject private var session: SessionModel
@@ -9,6 +10,8 @@ struct ComposerView: View {
     @State private var text = ""
     @State private var feed = "private"
     @State private var photoItems: [PhotosPickerItem] = []
+    @State private var fileURLs: [URL] = []
+    @State private var showFileImporter = false
     @State private var saving = false
     @State private var errorMessage: String?
     @FocusState private var focused: Bool
@@ -55,6 +58,13 @@ struct ComposerView: View {
                 text = initialText
             }
             focused = true
+        }
+        .fileImporter(isPresented: $showFileImporter,
+                      allowedContentTypes: importTypes,
+                      allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result {
+                fileURLs.append(contentsOf: urls)
+            }
         }
         .alert("Couldn't save", isPresented: .init(
             get: { errorMessage != nil },
@@ -156,10 +166,33 @@ struct ComposerView: View {
                     .font(Theme.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.accent)
             }
+            Button {
+                showFileImporter = true
+            } label: {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 18))
+                    .foregroundStyle(fileURLs.isEmpty ? Theme.textMuted : Theme.accent)
+            }
+            if !fileURLs.isEmpty {
+                Text("\(fileURLs.count)")
+                    .font(Theme.mono(11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .background(Theme.surface)
+    }
+
+    /// File types the document picker offers, mirroring the web composer's
+    /// `accept` list (.md/.txt are covered by `.plainText`). The server's
+    /// ALLOWED_EXTENSIONS is the source of truth and rejects anything else.
+    private var importTypes: [UTType] {
+        let exts = ["md", "txt", "pdf", "doc", "docx", "csv", "xls", "xlsx",
+                    "pptx", "m4a", "mp3", "wav", "ogg", "mp4", "mov", "zip"]
+        var types = exts.compactMap { UTType(filenameExtension: $0) }
+        types.append(.plainText)
+        return types
     }
 
     private var extractedTags: [String] {
@@ -223,7 +256,7 @@ struct ComposerView: View {
             } else {
                 note = try await api.createNote(content: content, tags: tags, feed: feed)
             }
-            try await attachPhotos(to: note, api: api)
+            try await attachFiles(to: note, api: api)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
         } catch {
@@ -231,8 +264,10 @@ struct ComposerView: View {
         }
     }
 
-    private func attachPhotos(to note: Note, api: APIClient) async throws {
-        guard !photoItems.isEmpty else { return }
+    /// Uploads any picked photos and document files, then appends all their
+    /// markdown links to the note in a single update (so the second batch
+    /// doesn't overwrite the first's content).
+    private func attachFiles(to note: Note, api: APIClient) async throws {
         var links: [String] = []
         for item in photoItems {
             guard let data = try? await item.loadTransferable(type: Data.self),
@@ -242,9 +277,19 @@ struct ComposerView: View {
                 noteID: note.id, data: jpeg, filename: "photo.jpg", mimeType: "image/jpeg")
             links.append(upload.markdown)
         }
-        if !links.isEmpty {
-            let content = note.content + "\n\n" + links.joined(separator: "\n")
-            _ = try await api.updateNote(id: note.id, fields: ["content": content])
+        for url in fileURLs {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            let upload = try await api.uploadAttachment(
+                noteID: note.id, data: data,
+                filename: url.lastPathComponent, mimeType: mime)
+            links.append(upload.markdown)
         }
+        guard !links.isEmpty else { return }
+        let content = note.content + "\n\n" + links.joined(separator: "\n")
+        _ = try await api.updateNote(id: note.id, fields: ["content": content])
     }
 }
