@@ -148,8 +148,16 @@
     <div class="composer-tagrow" id="composerTags"></div>
     <div class="composer-tagsuggest" id="composerSuggest"></div>
     <div class="composer-remind">
-      <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked"> ⏰ remind me</label>
+      <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked; document.getElementById('remindRepeat').hidden=!this.checked"> ⏰ remind me</label>
       <input type="datetime-local" id="remindAt" hidden>
+      <select id="remindRepeat" class="composer-repeat" hidden title="Repeat">
+        <option value="">Once</option>
+        <option value="daily">Daily</option>
+        <option value="weekdays">Weekdays</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="yearly">Yearly</option>
+      </select>
     </div>
     <div class="composer-attach">
       <input type="file" id="composerFilePicker" hidden multiple

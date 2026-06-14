@@ -936,18 +936,34 @@ function showReminderBanner(rem){
   const div = document.createElement('div');
   div.className = 'reminder-banner';
   div.dataset.reminder = rem.id;
-  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> ${esc(rem.message)} <button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`;
+  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> <span class="rb-msg">${esc(rem.message)}</span>`
+    + `<span class="rb-actions">`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','1h')">+1h</button>`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','tonight')">Tonight</button>`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','tomorrow')">Tomorrow</button>`
+    + `<button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`
+    + `</span>`;
   document.getElementById('reminderBanners').appendChild(div);
+}
+function _forgetBanner(id){
+  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
+  dismissed.push(id);
+  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
+  document.querySelector(`[data-reminder="${id}"]`)?.remove();
 }
 function dismissReminder(id){
   // Remember it for this tab immediately (snappy), then persist server-side so
   // the dismissal sticks across reloads and other devices — otherwise the
   // /api/reminders/pending fallback keeps re-showing it for 24h.
-  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
-  dismissed.push(id);
-  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
-  document.querySelector(`[data-reminder="${id}"]`)?.remove();
+  _forgetBanner(id);
   api('/api/reminders/'+id+'/dismiss', { method:'POST' }).catch(()=>{});
+}
+function snoozeReminder(id, preset){
+  // Clear the banner now; re-arm the reminder server-side for a later time.
+  _forgetBanner(id);
+  api('/api/reminders/'+id+'/snooze', { method:'POST', body: JSON.stringify({ preset }) })
+    .then(r => { toast(`⏰ Snoozed · ${fmtDate(r.fire_at)}`); refreshReminderCount(); })
+    .catch(()=> toast('Could not snooze'));
 }
 
 /* ─── Upcoming reminders ───────────────────────────────────── */
@@ -959,57 +975,12 @@ async function refreshReminderCount(){
   badge.hidden = !rems.length;
   return rems;
 }
-/* ─── Web push (per-device) ────────────────────────────────── */
-let _vapidKey = null, _swReg = null;
-function urlB64ToUint8Array(base64){
-  const pad = '='.repeat((4 - base64.length % 4) % 4);
-  const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(b64);
-  return Uint8Array.from(raw, c => c.charCodeAt(0));
+function recurrenceLabel(rrule){
+  return ({
+    'FREQ=DAILY': 'daily', 'FREQ=WEEKLY': 'weekly', 'FREQ=MONTHLY': 'monthly',
+    'FREQ=YEARLY': 'yearly', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR': 'weekdays',
+  })[rrule] || 'repeats';
 }
-async function initPush(){
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  try {
-    _swReg = await navigator.serviceWorker.register('/sw.js');
-    const cfg = await api('/api/push/key').catch(() => null);
-    if (!cfg || !cfg.configured) return;   // server has no VAPID keys → no push
-    _vapidKey = cfg.publicKey;
-    updatePushButton(await _swReg.pushManager.getSubscription());
-  } catch (e) { /* push unsupported / blocked — fail quiet */ }
-}
-function updatePushButton(sub){
-  const wrap = document.getElementById('remPush');
-  const btn = document.getElementById('pushToggle');
-  if (!wrap || !btn || !_vapidKey) { if (wrap) wrap.hidden = true; return; }
-  wrap.hidden = false;
-  btn.textContent = sub ? 'Disable push on this device' : 'Enable push on this device';
-  btn.dataset.on = sub ? '1' : '';
-}
-async function refreshPushButton(){
-  if (!_swReg || !_vapidKey) return;
-  updatePushButton(await _swReg.pushManager.getSubscription().catch(() => null));
-}
-async function togglePush(){
-  if (!_swReg || !_vapidKey) return;
-  const existing = await _swReg.pushManager.getSubscription();
-  if (existing){
-    await api('/api/push/unsubscribe',
-              { method:'POST', body: JSON.stringify({ endpoint: existing.endpoint }) }).catch(()=>{});
-    await existing.unsubscribe().catch(()=>{});
-    updatePushButton(null);
-    toast('Push disabled on this device');
-    return;
-  }
-  if (await Notification.requestPermission() !== 'granted'){ toast('Notifications blocked'); return; }
-  const sub = await _swReg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlB64ToUint8Array(_vapidKey),
-  });
-  await api('/api/push/subscribe', { method:'POST', body: JSON.stringify(sub) });
-  updatePushButton(sub);
-  toast('⏰ Push enabled on this device');
-}
-
 async function openReminders(){
   document.getElementById('remindersOverlay').classList.add('open');
   refreshPushButton();
@@ -1020,7 +991,7 @@ async function openReminders(){
   list.innerHTML = rems.map(r => `
     <div class="rem-row" data-rem="${r.id}">
       <div class="rem-text">
-        <div class="rem-when">${fmtDate(r.fire_at)}</div>
+        <div class="rem-when">${fmtDate(r.fire_at)}${r.recurrence ? ' · 🔁 '+esc(recurrenceLabel(r.recurrence)) : ''}</div>
         <div class="rem-msg">${esc(r.message)}</div>
       </div>
       <button class="sx rem-del" onclick="deleteReminder('${r.id}')" title="Cancel reminder">✕</button>
@@ -1217,6 +1188,7 @@ async function saveNote(){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
         fire_at: document.getElementById('remindAt').value + ':00',
+        recurrence: document.getElementById('remindRepeat').value || undefined,
         notify_web: true, notify_sms: true, note_id: note.id,
       }) });
       note.reminder = { fire_at: document.getElementById('remindAt').value + ':00' };
@@ -1225,6 +1197,8 @@ async function saveNote(){
     document.getElementById('remindOn').checked = false;
     document.getElementById('remindAt').hidden = true;
     document.getElementById('remindAt').value = '';
+    document.getElementById('remindRepeat').hidden = true;
+    document.getElementById('remindRepeat').value = '';
     const wasEditing = !!editingNoteId;
     editingNoteId = null;
     closeComposer();
