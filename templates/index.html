@@ -127,6 +127,18 @@
   </div>
 </div>
 
+<!-- Manage attachments -->
+<div class="overlay" id="attachmentsOverlay" onclick="if(event.target===this)closeAttachments()">
+  <div class="sheet">
+    <div class="sheet-h">Files on this note</div>
+    <div class="sheet-sub">Delete removes the file and its link from the note</div>
+    <div class="tag-edit-list" id="attachmentsList"></div>
+    <div class="sheet-foot">
+      <button class="sx go" onclick="closeAttachments()">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- Manage templates -->
 <div class="overlay" id="templatesOverlay" onclick="if(event.target===this)closeTemplates()">
   <div class="sheet">

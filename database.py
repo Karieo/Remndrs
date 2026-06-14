@@ -808,6 +808,19 @@ def get_attachment_by_filename(saved_filename):
     return dict(row) if row else None
 
 
+def get_attachment(att_id):
+    with connect() as conn:
+        row = conn.execute(
+            'SELECT a.*, n.user_id, n.feed FROM attachments a '
+            'JOIN notes n ON n.id = a.note_id WHERE a.id = ?', (att_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_attachment(att_id):
+    with connect() as conn:
+        conn.execute('DELETE FROM attachments WHERE id = ?', (att_id,))
+
+
 # ── Reminders ────────────────────────────────────────────
 
 def create_reminder(user_id, message, fire_at, notify_sms=True, notify_web=True,

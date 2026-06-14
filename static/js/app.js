@@ -363,10 +363,38 @@ function dropdownHTML(n) {
     <div class="dd-item" style="--c:#60a5fa" onclick="openShare('${n.id}')"><span class="di">${svg('reply')}</span> Share with…</div>
     <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
+    ${n.attachments && n.attachments.length ? `<div class="dd-item" onclick="openAttachments('${n.id}')"><span class="di">${svg('clip')}</span> Manage files (${n.attachments.length})</div>` : ''}
     <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
     <div class="dd-item" onclick="archiveNote('${n.id}', ${n.archived?'false':'true'})"><span class="di">${svg('archive')}</span> ${n.archived?'Restore':'Archive'}</div>
     <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
   </div>`;
+}
+
+/* ─── Attachment management ────────────────────────────────── */
+let attachmentsNoteId = null;
+function openAttachments(noteId){
+  closeAllMenus();
+  attachmentsNoteId = noteId;
+  document.getElementById('attachmentsOverlay').classList.add('open');
+  renderAttachments();
+}
+function closeAttachments(){ document.getElementById('attachmentsOverlay').classList.remove('open'); }
+function renderAttachments(){
+  const n = notes.find(x=>x.id===attachmentsNoteId);
+  const list = document.getElementById('attachmentsList');
+  const atts = (n && n.attachments) || [];
+  list.innerHTML = atts.length
+    ? atts.map(a=>`<div class="tag-edit-row">
+        <a class="tpl-title" href="/api/attachments/${encodeURIComponent(a.saved_filename)}" target="_blank" rel="noopener">${esc(a.original_filename||a.saved_filename)}</a>
+        <button class="sx rem-del" onclick="deleteAttachment('${a.id}')" title="Delete file">✕</button>
+      </div>`).join('')
+    : '<div class="rem-empty">No files.</div>';
+}
+async function deleteAttachment(id){
+  await api('/api/attachments/'+id, { method:'DELETE' }).catch(e=>toast(esc(e.message)));
+  await loadNotes();
+  renderAttachments();
+  if (!((notes.find(x=>x.id===attachmentsNoteId)||{}).attachments||[]).length) closeAttachments();
 }
 
 /* ─── Render feed ──────────────────────────────────────────── */

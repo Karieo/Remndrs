@@ -69,3 +69,14 @@ def resolve_path(saved_filename: str, user_name: str):
     path = os.path.join(files.attachments_folder(user_name),
                         os.path.basename(saved_filename))
     return path if os.path.exists(path) else None
+
+
+def delete_file(saved_filename: str, user_name: str):
+    """Remove an attachment from disk (best-effort — the DB row is the source
+    of truth and is deleted separately)."""
+    path = resolve_path(saved_filename, user_name)
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
