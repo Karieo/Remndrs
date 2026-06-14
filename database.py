@@ -784,6 +784,15 @@ def acknowledge_reminder(rem_id):
         conn.execute('UPDATE reminders SET acknowledged = 1 WHERE id = ?', (rem_id,))
 
 
+def snooze_reminder(rem_id, fire_at):
+    """Re-arm a (usually already-fired) reminder for a later time. Clears fired
+    and acknowledged so the 60s dispatcher runs it again and the banner can
+    resurface when it next fires."""
+    with connect() as conn:
+        conn.execute('UPDATE reminders SET fire_at = ?, fired = 0, '
+                     'acknowledged = 0 WHERE id = ?', (fire_at, rem_id))
+
+
 def delete_reminder(rem_id):
     with connect() as conn:
         conn.execute('DELETE FROM reminders WHERE id = ?', (rem_id,))

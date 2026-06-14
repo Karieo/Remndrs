@@ -936,18 +936,34 @@ function showReminderBanner(rem){
   const div = document.createElement('div');
   div.className = 'reminder-banner';
   div.dataset.reminder = rem.id;
-  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> ${esc(rem.message)} <button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`;
+  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> <span class="rb-msg">${esc(rem.message)}</span>`
+    + `<span class="rb-actions">`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','1h')">+1h</button>`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','tonight')">Tonight</button>`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','tomorrow')">Tomorrow</button>`
+    + `<button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`
+    + `</span>`;
   document.getElementById('reminderBanners').appendChild(div);
+}
+function _forgetBanner(id){
+  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
+  dismissed.push(id);
+  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
+  document.querySelector(`[data-reminder="${id}"]`)?.remove();
 }
 function dismissReminder(id){
   // Remember it for this tab immediately (snappy), then persist server-side so
   // the dismissal sticks across reloads and other devices — otherwise the
   // /api/reminders/pending fallback keeps re-showing it for 24h.
-  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
-  dismissed.push(id);
-  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
-  document.querySelector(`[data-reminder="${id}"]`)?.remove();
+  _forgetBanner(id);
   api('/api/reminders/'+id+'/dismiss', { method:'POST' }).catch(()=>{});
+}
+function snoozeReminder(id, preset){
+  // Clear the banner now; re-arm the reminder server-side for a later time.
+  _forgetBanner(id);
+  api('/api/reminders/'+id+'/snooze', { method:'POST', body: JSON.stringify({ preset }) })
+    .then(r => { toast(`⏰ Snoozed · ${fmtDate(r.fire_at)}`); refreshReminderCount(); })
+    .catch(()=> toast('Could not snooze'));
 }
 
 /* ─── Upcoming reminders ───────────────────────────────────── */
