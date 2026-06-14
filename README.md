@@ -342,7 +342,9 @@ marker comment and preserve everything you write below it.
 - The SQLite database (`data/remndrs.db`) holds the index: tags, todos,
   reminders, shares, calendar state. The `.md` files hold the content.
 - **Backup** = your iCloud folder (already synced) plus, optionally,
-  `data/remndrs.db` and `.env`.
+  `data/remndrs.db` and `.env`. Not on a Mac (e.g. a Pi, where there's no
+  iCloud)? `backup.sh` ships both the notes folder and `remndrs.db` off-box
+  over SSH on a schedule — see PI_SETUP.md → "Backing up the Pi".
 - **Reset the app** without losing notes: stop it and delete
   `data/remndrs.db` — the owner account is re-seeded from `.env` on next
   start. (Existing `.md` files aren't re-imported; the DB is the index.)

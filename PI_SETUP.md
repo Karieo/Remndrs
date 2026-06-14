@@ -124,6 +124,41 @@ pair the devices, and share `/home/pi/RemndrsNotes` ↔
 `~/Library/Mobile Documents/com~apple~CloudDocs/Remndrs`. Syncthing keeps
 them identical both ways; iCloud picks the folder up from the Mac as before.
 
+## Backing up the Pi
+
+Unlike the Mac, **nothing on the Pi is backed up automatically** — the notes
+folder (`/home/pi/RemndrsNotes`) and the index (`data/remndrs.db`) both live on
+one SD card. `backup.sh` ships both off the Pi to another machine over SSH; run
+it nightly from cron so a dead card never means lost notes.
+
+**On the machine you're backing up *to*** (e.g. your Mac): turn on SSH so the Pi
+can reach it. On macOS: System Settings → General → Sharing → **Remote Login**.
+
+**On the Pi**, give cron a key the Mac trusts, then point `backup.sh` at it:
+
+```bash
+# one-time: a key cron can use without a password prompt
+ssh-keygen -t ed25519 -f ~/.ssh/remndrs_backup -N ""
+ssh-copy-id -i ~/.ssh/remndrs_backup.pub clay@macbook.local   # your Mac user@host
+
+cd ~/Remndrs
+echo "BACKUP_DEST=clay@macbook.local:RemndrsBackup" >> .env
+echo "BACKUP_SSH_KEY=/home/pi/.ssh/remndrs_backup" >> .env
+
+./backup.sh        # test it — should create RemndrsBackup/{notes,db} on the Mac
+```
+
+It snapshots the DB consistently (safe while the app is running), mirrors the
+notes folder (never deletes backed-up files), and keeps the newest
+`BACKUP_KEEP_DB` (default 14) dated DB snapshots. Schedule it — nightly at 3am:
+
+```bash
+( crontab -l 2>/dev/null; echo "0 3 * * * cd /home/pi/Remndrs && ./backup.sh >> /tmp/remndrs-backup.log 2>&1" ) | crontab -
+```
+
+Check `/tmp/remndrs-backup.log` after the first run. To restore later: copy the
+notes folder back, and put the newest `remndrs-*.db` at `data/remndrs.db`.
+
 ## 7. Decommission the Mac (after verifying)
 
 The bootout commands in steps 3 and 5 already stopped both services. To make
