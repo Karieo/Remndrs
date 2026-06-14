@@ -787,6 +787,38 @@ def api_delete_template(tpl_id):
     return jsonify({'success': True})
 
 
+# ── Saved searches ───────────────────────────────────────
+
+@app.route('/api/saved-searches')
+def api_list_saved_searches():
+    return jsonify(db.list_saved_searches(session['user_id']))
+
+
+@app.route('/api/saved-searches', methods=['POST'])
+def api_create_saved_search():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    tags = data.get('tags') or []
+    if not isinstance(tags, list):
+        return jsonify({'error': 'tags must be a list'}), 400
+    saved = db.create_saved_search(
+        session['user_id'], name[:60],
+        feed=data.get('feed', 'private'), channel=data.get('channel', 'all'),
+        tags=[str(t) for t in tags], search=(data.get('search') or ''))
+    return jsonify(saved), 201
+
+
+@app.route('/api/saved-searches/<sid>', methods=['DELETE'])
+def api_delete_saved_search(sid):
+    s = db.get_saved_search(sid)
+    if not s or s['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    db.delete_saved_search(sid)
+    return jsonify({'success': True})
+
+
 @app.route('/api/tags')
 def api_list_tags():
     return jsonify(db.list_tags())

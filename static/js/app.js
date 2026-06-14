@@ -24,6 +24,7 @@ const I = {
   archive:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
   clip:'<path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
 };
 const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
@@ -452,6 +453,49 @@ function setFeed(f){
 function onSearchInput(){
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => { search = document.getElementById('search').value.trim(); loadNotes(); }, 250);
+}
+
+/* ─── Saved searches ───────────────────────────────────────── */
+let savedSearches = [];
+async function loadSavedSearches(){
+  savedSearches = await api('/api/saved-searches').catch(()=>[]);
+  renderSavedBar();
+}
+function renderSavedBar(){
+  const bar = document.getElementById('savedBar');
+  if (!bar) return;
+  const pills = savedSearches.map(s =>
+    `<span class="saved-pill" onclick="applySavedSearch('${s.id}')" title="Apply saved search">
+      ${svg('search',11)} ${esc(s.name)}
+      <button class="saved-del" onclick="event.stopPropagation();deleteSavedSearch('${s.id}')" title="Delete">✕</button>
+    </span>`).join('');
+  bar.innerHTML = pills + `<button class="saved-save" onclick="saveCurrentSearch()" title="Save current filters">★ Save search</button>`;
+}
+function currentFilterIsEmpty(){
+  return activeChan === 'all' && !activeTags.size && !search && activeFeed === 'private';
+}
+async function saveCurrentSearch(){
+  if (currentFilterIsEmpty()){ toast('Set a feed, tag, channel, or search first'); return; }
+  const name = (prompt('Name this saved search?') || '').trim();
+  if (!name) return;
+  const saved = await api('/api/saved-searches', { method:'POST', body: JSON.stringify({
+    name, feed: activeFeed, channel: activeChan, tags: [...activeTags], search,
+  }) }).catch(e=>{ toast(esc(e.message)); return null; });
+  if (saved){ await loadSavedSearches(); toast('Saved search'); }
+}
+function applySavedSearch(id){
+  const s = savedSearches.find(x=>x.id===id);
+  if (!s) return;
+  activeChan = s.channel || 'all';
+  activeTags = new Set(s.tags || []);
+  search = s.search || '';
+  document.getElementById('search').value = search;
+  renderTagBar();
+  setFeed(s.feed || 'private');   // setFeed updates the toggle + calls loadNotes()
+}
+async function deleteSavedSearch(id){
+  await api('/api/saved-searches/'+id, { method:'DELETE' }).catch(()=>{});
+  await loadSavedSearches();
 }
 
 /* ─── Menus ────────────────────────────────────────────────── */
@@ -1336,6 +1380,7 @@ loadTags();
 loadNotes();
 loadPeople();
 loadTemplates();
+loadSavedSearches();
 refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});

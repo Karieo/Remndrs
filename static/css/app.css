@@ -98,6 +98,22 @@ button { font-family:inherit; }
 .tag-pill.active { background:color-mix(in srgb,var(--tag-color) 15%,var(--surface)); border-color:var(--tag-color); color:var(--tag-color); }
 .tag-pill:not(.active):hover { border-color:var(--border-2); color:var(--text-mid); }
 
+/* ─── Saved searches ───────────────────────────────────────── */
+.saved-bar { display:flex; align-items:center; gap:6px; padding:0 24px 12px; flex-wrap:wrap; }
+.saved-bar:empty { display:none; }
+.saved-pill { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; letter-spacing:0.3px;
+  padding:4px 8px; border-radius:20px; background:var(--surface); border:1px solid var(--border);
+  color:var(--text-mid); transition:all .15s; }
+.saved-pill:hover { border-color:var(--border-2); color:var(--text); }
+.saved-pill svg { width:11px; height:11px; }
+.saved-del { background:none; border:none; color:var(--text-faint); cursor:pointer; padding:0 0 0 2px; font-size:11px; }
+.saved-del:hover { color:#f87171; }
+.saved-save { background:none; border:1px dashed var(--border-2); color:var(--text-muted);
+  border-radius:20px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
+  letter-spacing:0.3px; padding:4px 10px; cursor:pointer; transition:all .15s; }
+.saved-save:hover { color:var(--accent); border-color:var(--accent); }
+
 /* ─── Cards Grid ───────────────────────────────────────────── */
 .cards-grid { column-count:4; column-gap:14px; padding:4px 24px 64px; }
 @media (max-width:1200px){ .cards-grid{ column-count:3; } }
