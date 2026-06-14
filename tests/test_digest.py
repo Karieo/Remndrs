@@ -45,8 +45,10 @@ def test_build_digest_none_when_empty(make_user):
 def test_build_digest_includes_notes_and_reminders(make_user, make_note):
     user = make_user('Clay')
     make_note(user, content='Buy milk\nand eggs')
-    soon = (datetime.now() + timedelta(hours=2)).isoformat(timespec='seconds')
-    db.create_reminder(user['id'], 'call mom', soon)
+    # A fixed time today (digest includes any unfired reminder before tomorrow
+    # 00:00; using now+Nh could cross midnight and fall outside the window).
+    today9 = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+    db.create_reminder(user['id'], 'call mom', today9.isoformat(timespec='seconds'))
     built = digest.build_digest(user)
     assert built is not None
     _subject, body = built
