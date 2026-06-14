@@ -1138,9 +1138,6 @@ async function saveDigestHour(val){
             { method:'PATCH', body: JSON.stringify({ digest_hour: val === '' ? null : Number(val) }) }).catch(()=>{});
   toast(val === '' ? 'Daily digest off' : 'Daily digest scheduled');
 }
-async function openReminders(){
-  document.getElementById('remindersOverlay').classList.add('open');
-  loadDigestHour();
 function recurrenceLabel(rrule){
   return ({
     'FREQ=DAILY': 'daily', 'FREQ=WEEKLY': 'weekly', 'FREQ=MONTHLY': 'monthly',
@@ -1149,6 +1146,7 @@ function recurrenceLabel(rrule){
 }
 async function openReminders(){
   document.getElementById('remindersOverlay').classList.add('open');
+  loadDigestHour();
   refreshPushButton();
   const list = document.getElementById('remindersList');
   list.innerHTML = '<div class="rem-empty">Loading…</div>';
