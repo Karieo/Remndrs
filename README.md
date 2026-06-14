@@ -441,8 +441,10 @@ address), since claude.ai reaches the server from outside.
 
 Pressing Connect again **revokes the old URL** and mints a fresh one — do
 that any time you think the URL leaked (it's a bearer secret; treat it like
-a password). Tools exposed: `add_note`, `add_reminder`, `search_notes`,
-`recent_notes`, `get_notes_by_tag` — Claude can read your notes through the
+a password). Tools exposed: `add_note`, `add_reminder`, `attach_file`,
+`search_notes`, `recent_notes`, `get_notes_by_tag` — `attach_file` saves a
+file (Markdown, PDF, image, …) to a note as a real attachment instead of
+pasting its text into the body, and Claude can read your notes through the
 last three, so only connect accounts you trust with that.
 
 ---

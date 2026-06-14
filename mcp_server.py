@@ -12,9 +12,11 @@ Claude Code with:
       --header "Authorization: Bearer TOKEN"
 """
 
+import base64
 import logging
 from datetime import datetime
 
+import attachments
 import database as db
 import files
 import sms  # reuse the channel helpers (extract_hashtags/_snippet/_fmt_date)
@@ -29,7 +31,10 @@ INSTRUCTIONS = (
     "Remndrs is the user's personal notes and reminders app. Use add_note to "
     "save notes (#hashtags in the content become tags), add_reminder for "
     "time-based reminders, and search_notes / recent_notes / get_notes_by_tag "
-    "to read what the user has saved. Times are in the user's local timezone.")
+    "to read what the user has saved. To attach a file (a Markdown/.md "
+    "document, PDF, image, etc.) to a note, use attach_file — pass the file's "
+    "body rather than pasting its contents into add_note, so it's saved as a "
+    "real attachment. Times are in the user's local timezone.")
 
 MAX_RESULTS = 20
 
@@ -149,6 +154,67 @@ def _tool_add_reminder(user, args):
     return f'Reminder set for {_human_time(fire_at)}: "{message}"'
 
 
+def _tool_attach_file(user, args):
+    filename = (args.get('filename') or '').strip()
+    if not filename:
+        raise ToolError('filename is required (e.g. "notes.md") so the '
+                        'attachment keeps its name and extension.')
+
+    # The file body arrives as text (Markdown, plain text) or, for binary
+    # files, base64. We never want Claude pasting file contents into a note's
+    # body — that's the bug this tool exists to fix.
+    content_b64 = args.get('content_base64')
+    text = args.get('content')
+    if content_b64:
+        try:
+            data = base64.b64decode(content_b64, validate=True)
+        except (ValueError, TypeError):
+            raise ToolError('content_base64 is not valid base64.')
+    elif text is not None:
+        data = str(text).encode('utf-8')
+    else:
+        raise ToolError('Provide the file body as "content" (text, e.g. '
+                        'Markdown) or "content_base64" (binary files).')
+
+    # Attach to an existing note the user owns, or create a new note to hold it.
+    note_id = (args.get('note_id') or '').strip()
+    created = False
+    if note_id:
+        note = db.get_note(note_id)
+        if not note or note['user_id'] != user['id']:
+            raise ToolError(f'No note with id "{note_id}" that you own.')
+    else:
+        note_text = (args.get('note') or '').strip() or f'Attached {filename}'
+        tags = sms.extract_hashtags(note_text) + \
+            [str(t) for t in (args.get('tags') or [])]
+        tags = list(dict.fromkeys(t.upper() for t in tags if t))
+        feed = 'shared' if (args.get('shared') or 'SHARED' in tags) else 'private'
+        note = db.create_note(user['id'], content=note_text, feed=feed,
+                              source='claude', tags=tags)
+        note_id = note['id']
+        created = True
+
+    try:
+        saved = attachments.save(data, filename, note_id, user,
+                                 mime_type=(args.get('mime_type') or None))
+    except ValueError as e:
+        if created:  # don't leave an empty orphan note behind on rejection
+            db.delete_note(note_id)
+        raise ToolError(str(e))
+
+    link = attachments.markdown_link(saved)
+    new_content = (note['content'] + '\n\n' + link) if note['content'] else link
+    note = db.update_note(note_id, content=new_content)
+    md_filename = files.write_note_file(note, user['name'])
+    note = db.update_note(note_id, filename=md_filename)
+    sse.push_note_event('note_created' if created else 'note_updated', note)
+
+    size_kb = max(1, round(len(data) / 1024))
+    where = 'a new note' if created else f'note "{note["content"].splitlines()[0][:40]}"'
+    return (f'Attached "{filename}" ({size_kb} KB) to {where} '
+            f'in the {note["feed"]} feed.')
+
+
 def _format_notes(notes):
     lines = []
     for n in notes:
@@ -200,7 +266,9 @@ TOOLS = [
                      'content (#likethis) automatically become tags. The first '
                      'line becomes the note title. Pass remind_at to attach a '
                      'date and time to the note — it schedules a reminder for '
-                     'the note (in the app, and by SMS if configured).'),
+                     'the note (in the app, and by SMS if configured). To '
+                     'attach a file to a note, use attach_file instead of '
+                     "pasting the file's contents here."),
      'inputSchema': {'type': 'object', 'properties': {
          'content': {'type': 'string',
                      'description': 'Note text (Markdown supported).'},
@@ -239,6 +307,48 @@ TOOLS = [
          'message': {'type': 'string',
                      'description': 'What to remind the user about.'}},
          'required': ['when', 'message']}},
+    {'name': 'attach_file',
+     'description': ('Attach a file (a Markdown/.md document, text file, PDF, '
+                     'image, CSV, etc.) to a note as a real attachment, rather '
+                     'than pasting its contents into the note body. Use this '
+                     'whenever the user asks to attach, upload, or add a file '
+                     'to a note. Provide the file body as "content" for text '
+                     '(Markdown, .txt, .csv) or "content_base64" for binary '
+                     'files. Pass note_id to attach to an existing note, or '
+                     'omit it to create a new note that holds the attachment. '
+                     'The attachment is saved alongside the note and linked '
+                     'from its body.'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'filename': {'type': 'string',
+                      'description': 'File name including extension, e.g. '
+                                     '"meeting-notes.md". The extension '
+                                     'determines the file type.'},
+         'content': {'type': 'string',
+                     'description': 'The file body as text (for Markdown, '
+                                    'plain text, CSV, etc.). Use this for .md '
+                                    'files.'},
+         'content_base64': {'type': 'string',
+                            'description': 'The file body base64-encoded, for '
+                                           'binary files (PDF, images). Use '
+                                           'instead of "content".'},
+         'note_id': {'type': 'string',
+                     'description': 'Id of an existing note (that the user '
+                                    'owns) to attach the file to. Omit to '
+                                    'create a new note for the attachment.'},
+         'note': {'type': 'string',
+                  'description': 'When creating a new note, its text/title. '
+                                 '#hashtags become tags. Ignored if note_id is '
+                                 'given.'},
+         'tags': {'type': 'array', 'items': {'type': 'string'},
+                  'description': 'Optional extra tags for a newly created '
+                                 'note.'},
+         'shared': {'type': 'boolean',
+                    'description': 'True to post a newly created note to the '
+                                   'shared feed. Default false.'},
+         'mime_type': {'type': 'string',
+                       'description': 'Optional MIME type, e.g. "text/markdown". '
+                                      'Inferred from the filename if omitted.'}},
+         'required': ['filename']}},
     {'name': 'search_notes',
      'description': ("Search the user's notes (content and todo items) by "
                      "keywords, or by a date ('Jun 11', '2026-06-11', '6/11') "
@@ -269,6 +379,7 @@ TOOLS = [
 TOOL_HANDLERS = {
     'add_note': _tool_add_note,
     'add_reminder': _tool_add_reminder,
+    'attach_file': _tool_attach_file,
     'search_notes': _tool_search_notes,
     'recent_notes': _tool_recent_notes,
     'get_notes_by_tag': _tool_get_notes_by_tag,
