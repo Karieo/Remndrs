@@ -49,6 +49,68 @@ def parse_remind_text(text):
     return fire_at.isoformat(timespec='seconds'), message
 
 
+_WEEKDAYS = {'monday': 'MO', 'tuesday': 'TU', 'wednesday': 'WE', 'thursday': 'TH',
+             'friday': 'FR', 'saturday': 'SA', 'sunday': 'SU'}
+
+
+def parse_recurrence(text):
+    """Map a natural-language repeat phrase to a stored RRULE, or None.
+
+    Handles 'daily', 'weekly', 'monthly', 'yearly', 'weekdays', and
+    'every <weekday>'. Anything else (including a one-off time) returns None."""
+    if not text:
+        return None
+    t = text.lower()
+    if re.search(r'\b(weekdays?|every weekday)\b', t):
+        return 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'
+    for name, code in _WEEKDAYS.items():
+        if re.search(r'\bevery\s+' + name + r's?\b', t):
+            return f'FREQ=WEEKLY;BYDAY={code}'
+    if re.search(r'\b(daily|every day)\b', t):
+        return 'FREQ=DAILY'
+    if re.search(r'\b(weekly|every week)\b', t):
+        return 'FREQ=WEEKLY'
+    if re.search(r'\b(monthly|every month)\b', t):
+        return 'FREQ=MONTHLY'
+    if re.search(r'\b(yearly|annually|every year)\b', t):
+        return 'FREQ=YEARLY'
+    return None
+
+
+def normalize_recurrence(value):
+    """Accept either a repeat keyword ('daily', 'every monday', 'weekdays') or a
+    raw RRULE string and return a stored RRULE, or None if empty/unrecognised."""
+    value = (value or '').strip()
+    if not value:
+        return None
+    # A raw RRULE (has FREQ=) is kept verbatim once it parses; otherwise treat
+    # the value as a natural-language keyword. Checking RRULE first avoids a
+    # keyword like "weekly" matching inside "FREQ=WEEKLY;BYDAY=TU".
+    if 'FREQ=' in value.upper():
+        try:
+            from dateutil.rrule import rrulestr
+            rrulestr(value, dtstart=datetime.now())
+            return value
+        except Exception:
+            return None
+    return parse_recurrence(value)
+
+
+def next_recurrence(recurrence, fire_at_iso):
+    """Next fire time (ISO, naive local) for a recurring reminder, anchored to
+    the original time-of-day pattern but always after *now* so a paused series
+    doesn't replay a burst of missed occurrences. None when the series ends."""
+    if not recurrence:
+        return None
+    try:
+        from dateutil.rrule import rrulestr
+        dt = datetime.fromisoformat(fire_at_iso)
+        nxt = rrulestr(recurrence, dtstart=dt).after(datetime.now(), inc=False)
+    except (ValueError, TypeError):
+        return None
+    return nxt.isoformat(timespec='seconds') if nxt else None
+
+
 def check_reminders():
     """Runs every 60 seconds. Fires any reminders whose fire_at has passed."""
     now = datetime.now().isoformat(timespec='seconds')
@@ -77,6 +139,17 @@ def _dispatch_reminder(reminder):
         import sms
         sms.send_sms(user, user['phone_number'],
                      f"⏰ Reminder: {reminder['message']}")
+    # Recurring reminder: schedule the next occurrence as a fresh row so the
+    # one that just fired stays visible in the pending/banner fallback.
+    recurrence = reminder.get('recurrence')
+    if recurrence:
+        nxt = next_recurrence(recurrence, reminder['fire_at'])
+        if nxt:
+            db.create_reminder(reminder['user_id'], reminder['message'], nxt,
+                               notify_sms=bool(reminder['notify_sms']),
+                               notify_web=bool(reminder['notify_web']),
+                               note_id=reminder['note_id'], recurrence=recurrence)
+            log.info('Recurring reminder %s → next at %s', reminder['id'], nxt)
 
 
 def run_calendar_sync():

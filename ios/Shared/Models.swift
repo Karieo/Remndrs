@@ -108,13 +108,17 @@ struct Reminder: Codable, Identifiable, Hashable {
     let id: String
     let message: String
     let fireAt: String
+    /// iCal RRULE when the reminder repeats (e.g. "FREQ=WEEKLY;BYDAY=MO"),
+    /// nil for a one-off. Optional so older servers still decode.
+    var recurrence: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, message
+        case id, message, recurrence
         case fireAt = "fire_at"
     }
 
     var fireDate: Date? { RemndrsDate.parse(fireAt) }
+    var repeats: Bool { !(recurrence ?? "").isEmpty }
 }
 
 struct CalendarEvent: Codable, Identifiable, Hashable {

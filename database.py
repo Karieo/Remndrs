@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   notify_web INTEGER NOT NULL DEFAULT 1,
   fired INTEGER NOT NULL DEFAULT 0,
   acknowledged INTEGER NOT NULL DEFAULT 0,
+  recurrence TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -252,6 +253,8 @@ def _migrate(conn):
     if 'acknowledged' not in rem_cols:
         conn.execute('ALTER TABLE reminders ADD COLUMN acknowledged '
                      'INTEGER NOT NULL DEFAULT 0')
+    if 'recurrence' not in rem_cols:
+        conn.execute('ALTER TABLE reminders ADD COLUMN recurrence TEXT')
 
 
 def normalize_tag(name):
@@ -731,14 +734,17 @@ def get_attachment_by_filename(saved_filename):
 
 # ── Reminders ────────────────────────────────────────────
 
-def create_reminder(user_id, message, fire_at, notify_sms=True, notify_web=True, note_id=None):
+def create_reminder(user_id, message, fire_at, notify_sms=True, notify_web=True,
+                    note_id=None, recurrence=None):
     rem_id = str(uuid.uuid4())
     with connect() as conn:
         conn.execute(
             'INSERT INTO reminders (id, user_id, note_id, message, fire_at, '
-            'notify_sms, notify_web, fired, created_at) VALUES (?,?,?,?,?,?,?,0,?)',
+            'notify_sms, notify_web, fired, recurrence, created_at) '
+            'VALUES (?,?,?,?,?,?,?,0,?,?)',
             (rem_id, user_id, note_id, message, fire_at,
-             1 if notify_sms else 0, 1 if notify_web else 0, now_iso()))
+             1 if notify_sms else 0, 1 if notify_web else 0,
+             recurrence or None, now_iso()))
     return get_reminder(rem_id)
 
 

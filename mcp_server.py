@@ -19,6 +19,7 @@ from datetime import datetime
 import attachments
 import database as db
 import files
+import reminders as reminders_mod  # recurrence parsing (parse/normalize/describe)
 import sms  # reuse the channel helpers (extract_hashtags/_snippet/_fmt_date)
 import sse
 
@@ -87,6 +88,19 @@ def _human_time(fire_at):
     return fire_at.strftime('%A, %B %-d at %-I:%M %p')
 
 
+_RECUR_LABELS = {
+    'FREQ=DAILY': 'daily',
+    'FREQ=WEEKLY': 'weekly',
+    'FREQ=MONTHLY': 'monthly',
+    'FREQ=YEARLY': 'yearly',
+    'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR': 'on weekdays',
+}
+
+
+def _describe_recurrence(rrule):
+    return _RECUR_LABELS.get(rrule, 'on a schedule') if rrule else ''
+
+
 def _tool_add_note(user, args):
     content = (args.get('content') or '').strip()
     if not content:
@@ -124,10 +138,13 @@ def _tool_add_note(user, args):
 
     reminder_line = ''
     if fire_at:
+        recurrence = reminders_mod.normalize_recurrence(args.get('repeat'))
         db.create_reminder(user['id'], content.split('\n')[0][:120],
                            fire_at.isoformat(timespec='seconds'),
-                           notify_sms=True, notify_web=True, note_id=note['id'])
-        reminder_line = f' Reminder set for {_human_time(fire_at)}.'
+                           notify_sms=True, notify_web=True, note_id=note['id'],
+                           recurrence=recurrence)
+        repeat_note = f' (repeats {_describe_recurrence(recurrence)})' if recurrence else ''
+        reminder_line = f' Reminder set for {_human_time(fire_at)}{repeat_note}.'
 
     title = content.split('\n')[0][:60]
     extras = f' with {len(todos)} checklist items' if todos else ''
@@ -152,10 +169,12 @@ def _tool_add_reminder(user, args):
                         f'({fire_at.isoformat(timespec="minutes")}) — '
                         'reminders must be in the future.')
 
+    recurrence = reminders_mod.normalize_recurrence(args.get('repeat'))
     db.create_reminder(user['id'], message,
                        fire_at.isoformat(timespec='seconds'),
-                       notify_sms=True, notify_web=True)
-    return f'Reminder set for {_human_time(fire_at)}: "{message}"'
+                       notify_sms=True, notify_web=True, recurrence=recurrence)
+    repeat_note = f' (repeats {_describe_recurrence(recurrence)})' if recurrence else ''
+    return f'Reminder set for {_human_time(fire_at)}{repeat_note}: "{message}"'
 
 
 def _tool_attach_file(user, args):
@@ -227,7 +246,8 @@ def _tool_list_reminders(user, args):
     for r in reminders:
         fire_at = _parse_when(r['fire_at'])
         when = _human_time(fire_at) if fire_at else r['fire_at']
-        lines.append(f"• {when} — {r['message']}  (id: {r['id']})")
+        rep = f" · repeats {_describe_recurrence(r['recurrence'])}" if r.get('recurrence') else ''
+        lines.append(f"• {when} — {r['message']}{rep}  (id: {r['id']})")
     return f'{len(reminders)} upcoming reminder(s):\n' + '\n'.join(lines)
 
 
@@ -455,7 +475,12 @@ TOOLS = [
                                       '("2026-06-13T09:00") or natural '
                                       'language ("tomorrow at 9am"). Must be '
                                       'in the future; UTC/offset times are '
-                                      "converted to the user's local time."}},
+                                      "converted to the user's local time."},
+         'repeat': {'type': 'string',
+                    'description': 'Optional recurrence for the note\'s reminder '
+                                   '(needs remind_at): "daily", "weekly", '
+                                   '"monthly", "yearly", "weekdays", or "every '
+                                   '<weekday>". Omit for a one-off.'}},
          'required': ['content']}},
     {'name': 'add_reminder',
      'description': ('Set a reminder that notifies the user in the app (and '
@@ -471,7 +496,13 @@ TOOLS = [
                                  "user's local timezone; UTC/offset times "
                                  '(e.g. with a Z suffix) are converted to it.'},
          'message': {'type': 'string',
-                     'description': 'What to remind the user about.'}},
+                     'description': 'What to remind the user about.'},
+         'repeat': {'type': 'string',
+                    'description': 'Optional recurrence so the reminder repeats: '
+                                   '"daily", "weekly", "monthly", "yearly", '
+                                   '"weekdays", or "every <weekday>" (e.g. '
+                                   '"every monday"). A raw iCal RRULE is also '
+                                   'accepted. Omit for a one-off reminder.'}},
          'required': ['when', 'message']}},
     {'name': 'attach_file',
      'description': ('Attach a file (a Markdown/.md document, text file, PDF, '
