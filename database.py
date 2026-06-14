@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   notify_sms INTEGER NOT NULL DEFAULT 1,
   notify_web INTEGER NOT NULL DEFAULT 1,
   fired INTEGER NOT NULL DEFAULT 0,
+  acknowledged INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -247,6 +248,10 @@ def _migrate(conn):
     note_cols = {r['name'] for r in conn.execute('PRAGMA table_info(notes)')}
     if 'archived' not in note_cols:
         conn.execute('ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+    rem_cols = {r['name'] for r in conn.execute('PRAGMA table_info(reminders)')}
+    if 'acknowledged' not in rem_cols:
+        conn.execute('ALTER TABLE reminders ADD COLUMN acknowledged '
+                     'INTEGER NOT NULL DEFAULT 0')
 
 
 def normalize_tag(name):
@@ -761,13 +766,22 @@ def note_reminders(note_id, include_fired=False):
 
 
 def pending_reminders(user_id):
-    """Reminders fired in the last 24h — SSE fallback for tabs that missed the push."""
+    """Reminders fired in the last 24h that the user hasn't dismissed yet —
+    the SSE fallback for tabs/devices that missed the live push. Acknowledged
+    ones are excluded so a dismissal sticks across reloads and devices."""
     cutoff = (datetime.now() - timedelta(hours=24)).isoformat(timespec='seconds')
     with connect() as conn:
         rows = conn.execute(
-            'SELECT * FROM reminders WHERE user_id = ? AND fired = 1 AND fire_at >= ? '
+            'SELECT * FROM reminders WHERE user_id = ? AND fired = 1 '
+            'AND acknowledged = 0 AND fire_at >= ? '
             'ORDER BY fire_at DESC', (user_id, cutoff)).fetchall()
     return [dict(r) for r in rows]
+
+
+def acknowledge_reminder(rem_id):
+    """Mark a fired reminder as dismissed so it stops resurfacing as pending."""
+    with connect() as conn:
+        conn.execute('UPDATE reminders SET acknowledged = 1 WHERE id = ?', (rem_id,))
 
 
 def delete_reminder(rem_id):

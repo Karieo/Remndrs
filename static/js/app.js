@@ -940,10 +940,14 @@ function showReminderBanner(rem){
   document.getElementById('reminderBanners').appendChild(div);
 }
 function dismissReminder(id){
+  // Remember it for this tab immediately (snappy), then persist server-side so
+  // the dismissal sticks across reloads and other devices — otherwise the
+  // /api/reminders/pending fallback keeps re-showing it for 24h.
   const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
   dismissed.push(id);
   sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
   document.querySelector(`[data-reminder="${id}"]`)?.remove();
+  api('/api/reminders/'+id+'/dismiss', { method:'POST' }).catch(()=>{});
 }
 
 /* ─── Upcoming reminders ───────────────────────────────────── */
