@@ -802,6 +802,15 @@ def api_create_reminder():
     return jsonify(reminder), 201
 
 
+@app.route('/api/reminders/<rem_id>/dismiss', methods=['POST'])
+def api_dismiss_reminder(rem_id):
+    reminder = db.get_reminder(rem_id)
+    if not reminder or reminder['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    db.acknowledge_reminder(rem_id)
+    return jsonify({'success': True})
+
+
 @app.route('/api/reminders/<rem_id>', methods=['DELETE'])
 def api_delete_reminder(rem_id):
     reminder = db.get_reminder(rem_id)
