@@ -959,8 +959,60 @@ async function refreshReminderCount(){
   badge.hidden = !rems.length;
   return rems;
 }
+/* ─── Web push (per-device) ────────────────────────────────── */
+let _vapidKey = null, _swReg = null;
+function urlB64ToUint8Array(base64){
+  const pad = '='.repeat((4 - base64.length % 4) % 4);
+  const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+async function initPush(){
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    _swReg = await navigator.serviceWorker.register('/sw.js');
+    const cfg = await api('/api/push/key').catch(() => null);
+    if (!cfg || !cfg.configured) return;   // server has no VAPID keys → no push
+    _vapidKey = cfg.publicKey;
+    updatePushButton(await _swReg.pushManager.getSubscription());
+  } catch (e) { /* push unsupported / blocked — fail quiet */ }
+}
+function updatePushButton(sub){
+  const wrap = document.getElementById('remPush');
+  const btn = document.getElementById('pushToggle');
+  if (!wrap || !btn || !_vapidKey) { if (wrap) wrap.hidden = true; return; }
+  wrap.hidden = false;
+  btn.textContent = sub ? 'Disable push on this device' : 'Enable push on this device';
+  btn.dataset.on = sub ? '1' : '';
+}
+async function refreshPushButton(){
+  if (!_swReg || !_vapidKey) return;
+  updatePushButton(await _swReg.pushManager.getSubscription().catch(() => null));
+}
+async function togglePush(){
+  if (!_swReg || !_vapidKey) return;
+  const existing = await _swReg.pushManager.getSubscription();
+  if (existing){
+    await api('/api/push/unsubscribe',
+              { method:'POST', body: JSON.stringify({ endpoint: existing.endpoint }) }).catch(()=>{});
+    await existing.unsubscribe().catch(()=>{});
+    updatePushButton(null);
+    toast('Push disabled on this device');
+    return;
+  }
+  if (await Notification.requestPermission() !== 'granted'){ toast('Notifications blocked'); return; }
+  const sub = await _swReg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlB64ToUint8Array(_vapidKey),
+  });
+  await api('/api/push/subscribe', { method:'POST', body: JSON.stringify(sub) });
+  updatePushButton(sub);
+  toast('⏰ Push enabled on this device');
+}
+
 async function openReminders(){
   document.getElementById('remindersOverlay').classList.add('open');
+  refreshPushButton();
   const list = document.getElementById('remindersList');
   list.innerHTML = '<div class="rem-empty">Loading…</div>';
   const rems = await refreshReminderCount();
@@ -1240,3 +1292,4 @@ refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});
 refreshReminderCount();
+initPush();

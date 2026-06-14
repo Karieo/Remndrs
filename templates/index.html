@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Remndrs — Feed</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1c1814">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -67,6 +69,10 @@
     <div class="sheet-h">Upcoming reminders</div>
     <div class="sheet-sub">Scheduled from the app, SMS, Telegram, or Claude</div>
     <div class="rem-list" id="remindersList"></div>
+    <div class="rem-push" id="remPush" hidden>
+      <button class="sx" id="pushToggle" onclick="togglePush()">Enable push on this device</button>
+      <span class="rem-push-hint">Get reminders even when no tab is open.</span>
+    </div>
     <div class="sheet-foot">
       <button class="sx" onclick="closeReminders()">Close</button>
     </div>

@@ -203,6 +203,15 @@ CREATE TABLE IF NOT EXISTS note_replies (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  subscription TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   content,
   content='notes',
@@ -799,6 +808,32 @@ def get_due_reminders(now):
 def mark_reminder_fired(rem_id):
     with connect() as conn:
         conn.execute('UPDATE reminders SET fired = 1 WHERE id = ?', (rem_id,))
+
+
+# ── Web push subscriptions ───────────────────────────────
+
+def add_push_subscription(user_id, endpoint, subscription_json):
+    """Store (or refresh) a browser push subscription, keyed by its endpoint so
+    re-subscribing the same device replaces the old row instead of duplicating."""
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO push_subscriptions (id, user_id, endpoint, subscription, '
+            'created_at) VALUES (?,?,?,?,?) '
+            'ON CONFLICT(endpoint) DO UPDATE SET '
+            'user_id = excluded.user_id, subscription = excluded.subscription',
+            (str(uuid.uuid4()), user_id, endpoint, subscription_json, now_iso()))
+
+
+def list_push_subscriptions(user_id):
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT * FROM push_subscriptions WHERE user_id = ?', (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_push_subscription(endpoint):
+    with connect() as conn:
+        conn.execute('DELETE FROM push_subscriptions WHERE endpoint = ?', (endpoint,))
 
 
 # ── Link previews ────────────────────────────────────────

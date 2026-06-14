@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import database as db
 import sse
+import webpush
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +74,8 @@ def _dispatch_reminder(reminder):
             'message': reminder['message'],
             'fire_at': reminder['fire_at'],
         })
+        # SSE only reaches open tabs; web push reaches the browser when none are.
+        webpush.send_to_user(reminder['user_id'], '⏰ Reminder', reminder['message'])
     if reminder['notify_sms'] and user and user.get('phone_number'):
         import sms
         sms.send_sms(user, user['phone_number'],

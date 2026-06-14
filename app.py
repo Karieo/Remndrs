@@ -57,6 +57,7 @@ import sse
 import telegram
 import mcp_server
 import voice
+import webpush
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -146,7 +147,7 @@ seed_owner()
 # ── Auth ─────────────────────────────────────────────────
 
 PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/api/version',
-                '/webhooks/', '/static/', '/mcp')
+                '/webhooks/', '/static/', '/mcp', '/sw.js', '/manifest.json')
 
 
 def _hash_token(token):
@@ -818,6 +819,51 @@ def api_delete_reminder(rem_id):
         return jsonify({'error': 'Not found'}), 404
     db.delete_reminder(rem_id)
     return jsonify({'success': True})
+
+
+# ── Web push ─────────────────────────────────────────────
+
+@app.route('/api/push/key')
+def api_push_key():
+    """The VAPID public key + whether push is configured, for the client to
+    decide whether to offer the subscribe toggle."""
+    return jsonify({'configured': webpush.configured(),
+                    'publicKey': webpush.public_key()})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+def api_push_subscribe():
+    data = request.get_json(silent=True) or {}
+    endpoint = data.get('endpoint')
+    if not endpoint:
+        return jsonify({'error': 'endpoint required'}), 400
+    db.add_push_subscription(session['user_id'], endpoint, json.dumps(data))
+    return jsonify({'success': True}), 201
+
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+def api_push_unsubscribe():
+    endpoint = (request.get_json(silent=True) or {}).get('endpoint')
+    if endpoint:
+        db.delete_push_subscription(endpoint)
+    return jsonify({'success': True})
+
+
+# ── PWA: service worker + manifest (served at root for root scope) ───────────
+
+@app.route('/sw.js')
+def service_worker():
+    resp = send_file(os.path.join(_APP_DIR, 'static', 'sw.js'),
+                     mimetype='application/javascript')
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.route('/manifest.json')
+def web_manifest():
+    return send_file(os.path.join(_APP_DIR, 'static', 'manifest.json'),
+                     mimetype='application/manifest+json')
 
 
 # ── Link preview ─────────────────────────────────────────
