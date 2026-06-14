@@ -215,6 +215,15 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS templates (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   content,
   content='notes',
@@ -894,6 +903,35 @@ def list_push_subscriptions(user_id):
 def delete_push_subscription(endpoint):
     with connect() as conn:
         conn.execute('DELETE FROM push_subscriptions WHERE endpoint = ?', (endpoint,))
+
+
+# ── Note templates ───────────────────────────────────────
+
+def create_template(user_id, title, body):
+    tpl_id = str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO templates (id, user_id, title, body, created_at) '
+            'VALUES (?,?,?,?,?)', (tpl_id, user_id, title, body, now_iso()))
+    return get_template(tpl_id)
+
+
+def get_template(tpl_id):
+    with connect() as conn:
+        row = conn.execute('SELECT * FROM templates WHERE id = ?', (tpl_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_templates(user_id):
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT * FROM templates WHERE user_id = ? ORDER BY title', (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_template(tpl_id):
+    with connect() as conn:
+        conn.execute('DELETE FROM templates WHERE id = ?', (tpl_id,))
 
 
 # ── Link previews ────────────────────────────────────────

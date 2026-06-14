@@ -376,6 +376,9 @@ button { font-family:inherit; }
 .composer-tab svg { width:12px; height:12px; }
 .composer-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
 .composer-feed { margin-left:auto; margin-bottom:6px; }
+.composer-templates { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 16px 0; }
+.composer-templates select { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; }
+.composer-templates .tpl-title, .tpl-title { font-size:12px; color:var(--text); }
 .composer-textarea { width:100%; min-height:130px; max-height:45vh; background:transparent; border:none; color:var(--text); font-family:'Lora',serif; font-size:14px; line-height:1.65; padding:14px 16px; resize:vertical; outline:none; caret-color:var(--accent); }
 .composer-textarea::placeholder { color:var(--text-faint); font-style:italic; }
 .composer-footer { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; border-top:1px solid var(--border); gap:10px; }

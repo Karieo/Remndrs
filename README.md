@@ -148,6 +148,10 @@ Press `N` or the gold `+`. The composer has two modes:
 A Private/Shared toggle picks the feed, and the optional **⏰ remind me** row
 attaches a reminder to the note as you save it.
 
+**Templates** — the composer's *Templates…* dropdown inserts a reusable starter
+(e.g. a daily-journal or meeting-notes skeleton); *Save as template* turns the
+current text into one, and *Manage* deletes them. Templates are per-user.
+
 ### Reminders
 
 Create them from the composer, by SMS (`REMIND ME …`), or by emailing a
