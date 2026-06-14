@@ -98,6 +98,13 @@ button { font-family:inherit; }
 .tag-pill.active { background:color-mix(in srgb,var(--tag-color) 15%,var(--surface)); border-color:var(--tag-color); color:var(--tag-color); }
 .tag-pill:not(.active):hover { border-color:var(--border-2); color:var(--text-mid); }
 
+/* ─── Wikilinks ────────────────────────────────────────────── */
+.card-body a[href^="#wiki="], .cal-note a[href^="#wiki="] {
+  color:var(--accent); text-decoration:none; border-bottom:1px dashed var(--accent);
+  cursor:pointer; font-weight:500;
+}
+.card-body a[href^="#wiki="]:hover { background:color-mix(in srgb,var(--accent) 15%,transparent); }
+
 /* ─── Bulk select ──────────────────────────────────────────── */
 .btn-select { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted);
   border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;

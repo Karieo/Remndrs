@@ -119,6 +119,13 @@ The main screen is a masonry grid of cards, newest first, pinned notes on top.
   `# Edit Tags` renames, recolors, or deletes (notes are never deleted with a
   tag). A note's **first tag drives the card's accent color**.
 - **Search** — full-text across all your notes, debounced as you type.
+- **Saved searches** — once you've set a feed/channel/tag/search combination,
+  hit **★ Save search** to keep it as a pill above the feed; click to re-apply,
+  ✕ to remove.
+- **Select** — the *Select* button enters multi-select; tick several cards and
+  the floating bar moves, archives, or deletes them all at once.
+- **[[Wikilinks]]** — type `[[some text]]` in a note and it renders as a link
+  that searches for that text, so notes can point at each other.
 - **Theme** — sun/moon button toggles warm-dark / warm-light; remembered per
   browser.
 - **Live updates** — a note texted in from your phone appears in the open tab
