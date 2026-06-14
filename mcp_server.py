@@ -30,8 +30,10 @@ SERVER_VERSION = '0'  # app.py injects its VERSION after import
 INSTRUCTIONS = (
     "Remndrs is the user's personal notes and reminders app. Use add_note to "
     "save notes (#hashtags in the content become tags), add_reminder for "
-    "time-based reminders, and search_notes / recent_notes / get_notes_by_tag "
-    "to read what the user has saved. To attach a file (a Markdown/.md "
+    "time-based reminders, list_reminders to see upcoming ones, and "
+    "search_notes / recent_notes / get_notes_by_tag to find notes (each "
+    "result carries an '(id: …)'); pass that id to get_note to read a note in "
+    "full or to update_note to edit it. To attach a file (a Markdown/.md "
     "document, PDF, image, etc.) to a note, use attach_file — pass the file's "
     "body rather than pasting its contents into add_note, so it's saved as a "
     "real attachment. Times are in the user's local timezone.")
@@ -215,12 +217,104 @@ def _tool_attach_file(user, args):
             f'in the {note["feed"]} feed.')
 
 
+def _tool_list_reminders(user, args):
+    reminders = db.list_reminders(user['id'])
+    if not reminders:
+        return 'No upcoming reminders.'
+    lines = []
+    for r in reminders:
+        fire_at = _parse_when(r['fire_at'])
+        when = _human_time(fire_at) if fire_at else r['fire_at']
+        lines.append(f"• {when} — {r['message']}  (id: {r['id']})")
+    return f'{len(reminders)} upcoming reminder(s):\n' + '\n'.join(lines)
+
+
+def _tool_get_note(user, args):
+    note_id = (args.get('note_id') or '').strip()
+    if not note_id:
+        raise ToolError('note_id is required.')
+    note = db.get_note(note_id)
+    # Same visibility rule as the rest of the app: own notes + anyone's shared.
+    if not note or not (note['user_id'] == user['id'] or note['feed'] == 'shared'):
+        raise ToolError(f'No note with id "{note_id}" that you can access.')
+
+    lines = [f"Note {note['id']} · {note['feed']} feed · "
+             f"created {sms._fmt_date(note['created_at'])}"]
+    if note['tags']:
+        lines.append('Tags: ' + ' '.join('#' + t['name'] for t in note['tags']))
+    lines += ['', note['content'] or '(empty)']
+    if note['todos']:
+        lines.append('')
+        lines.append('Checklist:')
+        lines += [f"  [{'x' if t['checked'] else ' '}] {t['text']}"
+                  for t in note['todos']]
+    if note['attachments']:
+        lines.append('')
+        lines.append('Attachments: '
+                     + ', '.join(a['original_filename'] for a in note['attachments']))
+    return '\n'.join(lines)
+
+
+def _tool_update_note(user, args):
+    note_id = (args.get('note_id') or '').strip()
+    if not note_id:
+        raise ToolError('note_id is required.')
+    existing = db.get_note(note_id)
+    if not existing or existing['user_id'] != user['id']:
+        raise ToolError(f'No note with id "{note_id}" that you own.')
+
+    fields = {}
+    if args.get('content') is not None:
+        fields['content'] = str(args['content'])
+    append = (args.get('append') or '').strip()
+    if append:
+        base = fields.get('content', existing['content'])
+        fields['content'] = (base.rstrip() + '\n\n' + append) if base else append
+    if args.get('feed'):
+        feed = str(args['feed']).lower()
+        if feed not in ('private', 'shared'):
+            raise ToolError('feed must be "private" or "shared".')
+        fields['feed'] = feed
+    elif 'shared' in args:
+        fields['feed'] = 'shared' if args['shared'] else 'private'
+    if 'pinned' in args:
+        fields['pinned'] = bool(args['pinned'])
+    if 'archived' in args:
+        fields['archived'] = bool(args['archived'])
+
+    has_tags = args.get('tags') is not None
+    if not fields and not has_tags:
+        raise ToolError('Nothing to update — pass content, append, tags, feed, '
+                        'shared, pinned, or archived.')
+
+    if fields:
+        db.update_note(note_id, **fields)
+    if has_tags:
+        tags = list(dict.fromkeys(
+            str(t).upper() for t in args['tags'] if str(t).strip()))
+        db.set_note_tags(note_id, tags, created_by=user['id'])
+    note = db.get_note(note_id)
+
+    # Keep the .md mirror in sync, moving it between feed folders on a feed change.
+    if 'feed' in fields and fields['feed'] != existing['feed']:
+        files.move_note_file(existing, user['name'], existing['feed'])
+        note = db.update_note(note_id, filename=None)
+    md_filename = files.write_note_file(note, user['name'])
+    if md_filename != note.get('filename'):
+        note = db.update_note(note_id, filename=md_filename)
+    sse.push_note_event('note_updated', note)
+
+    title = note['content'].split('\n')[0][:60] if note['content'] else '(empty)'
+    return f'Updated note "{title}" in the {note["feed"]} feed.'
+
+
 def _format_notes(notes):
     lines = []
     for n in notes:
         tags = ' '.join('#' + t['name'] for t in n['tags'])
         lines.append(f"• {sms._fmt_date(n['created_at'])} · {sms._snippet(n, 200)}"
-                     + (f'  [{tags}]' if tags else ''))
+                     + (f'  [{tags}]' if tags else '')
+                     + f"  (id: {n['id']})")
     return '\n'.join(lines)
 
 
@@ -374,6 +468,51 @@ TOOLS = [
          'limit': {'type': 'integer',
                    'description': 'Max results, default 5, max 20.'}},
          'required': ['tag']}},
+    {'name': 'get_note',
+     'description': ("Read a single note in full by its id — its complete "
+                     'content, tags, checklist items, and attachments. The '
+                     'search/recent/tag tools return short snippets with an '
+                     "'(id: …)' suffix; pass that id here to see the whole "
+                     'note.'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'note_id': {'type': 'string',
+                     'description': "The note's id (from a list/search result)."}},
+         'required': ['note_id']}},
+    {'name': 'update_note',
+     'description': ("Edit an existing note the user owns. Use to change a "
+                     "note's text, add to it, retag it, move it between the "
+                     'private and shared feeds, or pin/archive it. Find the '
+                     "note's id with search_notes / recent_notes / "
+                     'get_notes_by_tag first. To add a file use attach_file '
+                     'instead.'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'note_id': {'type': 'string', 'description': 'The note to edit.'},
+         'content': {'type': 'string',
+                     'description': 'Replace the entire note body with this '
+                                    'text (Markdown).'},
+         'append': {'type': 'string',
+                    'description': 'Append this text to the end of the note '
+                                   'instead of replacing it (e.g. add a line '
+                                   'to a list). Combine with content to set '
+                                   'then append.'},
+         'tags': {'type': 'array', 'items': {'type': 'string'},
+                  'description': "Replace the note's tags with this set "
+                                 '(uppercased, deduplicated). Omit to leave '
+                                 'tags unchanged; pass [] to clear them.'},
+         'feed': {'type': 'string', 'enum': ['private', 'shared'],
+                  'description': 'Move the note to this feed.'},
+         'shared': {'type': 'boolean',
+                    'description': 'Shortcut for feed: true → shared, false → '
+                                   'private. Ignored if feed is set.'},
+         'pinned': {'type': 'boolean', 'description': 'Pin or unpin the note.'},
+         'archived': {'type': 'boolean',
+                      'description': 'Archive or unarchive the note.'}},
+         'required': ['note_id']}},
+    {'name': 'list_reminders',
+     'description': ("List the user's upcoming (not-yet-fired) reminders, "
+                     'soonest first. Use to answer questions like "what '
+                     'reminders do I have?"'),
+     'inputSchema': {'type': 'object', 'properties': {}, 'required': []}},
 ]
 
 TOOL_HANDLERS = {
@@ -383,6 +522,9 @@ TOOL_HANDLERS = {
     'search_notes': _tool_search_notes,
     'recent_notes': _tool_recent_notes,
     'get_notes_by_tag': _tool_get_notes_by_tag,
+    'get_note': _tool_get_note,
+    'update_note': _tool_update_note,
+    'list_reminders': _tool_list_reminders,
 }
 
 
