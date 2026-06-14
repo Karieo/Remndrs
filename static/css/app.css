@@ -225,6 +225,13 @@ button { font-family:inherit; }
 .todo-item { display:flex; align-items:flex-start; gap:8px; padding:3px 0; font-size:13px; line-height:1.45; cursor:pointer; }
 .todo-item input { flex-shrink:0; margin-top:3px; accent-color:var(--card-accent,var(--accent)); width:13px; height:13px; cursor:pointer; }
 .todo-item-text.done { text-decoration:line-through; color:var(--text-faint); }
+.todo-item-text { flex:1; }
+.todo-due { display:inline-flex; align-items:center; gap:3px; flex-shrink:0; margin-left:auto;
+  font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; letter-spacing:0.2px;
+  color:var(--text-muted); background:var(--surface-2); border:1px solid var(--border);
+  border-radius:4px; padding:1px 5px; white-space:nowrap; }
+.todo-due svg { width:10px; height:10px; }
+.todo-due.overdue { color:#f87171; border-color:#f87171; background:color-mix(in srgb,#f87171 12%,transparent); }
 
 /* Link preview */
 .link-preview { display:flex; gap:10px; margin-top:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:9px 10px; text-decoration:none; transition:border-color .15s; }

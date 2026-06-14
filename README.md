@@ -150,7 +150,9 @@ Press `N` or the gold `+`. The composer has two modes:
   automatically.
 - **To-Do** — first line is the title, every following line becomes a
   checkbox item. Cards show an `n / m` progress bar; check items off right on
-  the card.
+  the card. Add `@2026-07-01` (optionally with `HH:MM`) to a task line to give
+  it a **due date** — it shows as a badge on the card and turns red when
+  overdue.
 
 A Private/Shared toggle picks the feed, and the optional **⏰ remind me** row
 attaches a reminder to the note as you save it.

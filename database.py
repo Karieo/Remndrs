@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS todo_items (
   text TEXT NOT NULL,
   checked INTEGER NOT NULL DEFAULT 0,
   position INTEGER NOT NULL DEFAULT 0,
+  due_at TEXT,
   FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 
@@ -292,6 +293,9 @@ def _migrate(conn):
                      'INTEGER NOT NULL DEFAULT 0')
     if 'recurrence' not in rem_cols:
         conn.execute('ALTER TABLE reminders ADD COLUMN recurrence TEXT')
+    todo_cols = {r['name'] for r in conn.execute('PRAGMA table_info(todo_items)')}
+    if 'due_at' not in todo_cols:
+        conn.execute('ALTER TABLE todo_items ADD COLUMN due_at TEXT')
 
 
 def normalize_tag(name):
@@ -539,7 +543,7 @@ def note_to_dict(row):
     note['tags'] = get_note_tags(note['id'])
     with connect() as conn:
         todos = conn.execute(
-            'SELECT id, text, checked, position FROM todo_items '
+            'SELECT id, text, checked, position, due_at FROM todo_items '
             'WHERE note_id = ? ORDER BY position', (note['id'],)).fetchall()
         atts = conn.execute(
             'SELECT id, original_filename, saved_filename, mime_type, size_bytes '
@@ -605,10 +609,10 @@ def replace_todos(note_id, todos):
         conn.execute('DELETE FROM todo_items WHERE note_id = ?', (note_id,))
         for i, todo in enumerate(todos):
             conn.execute(
-                'INSERT INTO todo_items (id, note_id, text, checked, position) '
-                'VALUES (?,?,?,?,?)',
+                'INSERT INTO todo_items (id, note_id, text, checked, position, due_at) '
+                'VALUES (?,?,?,?,?,?)',
                 (str(uuid.uuid4()), note_id, todo.get('text', ''),
-                 1 if todo.get('checked') else 0, i))
+                 1 if todo.get('checked') else 0, i, todo.get('due_at') or None))
 
 
 def _like_term(term):
