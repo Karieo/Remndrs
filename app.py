@@ -761,6 +761,32 @@ def api_send_note(note_id):
 
 # ── Tags ─────────────────────────────────────────────────
 
+# ── Note templates ───────────────────────────────────────
+
+@app.route('/api/templates')
+def api_list_templates():
+    return jsonify(db.list_templates(session['user_id']))
+
+
+@app.route('/api/templates', methods=['POST'])
+def api_create_template():
+    data = request.get_json(silent=True) or {}
+    title = (data.get('title') or '').strip()
+    body = (data.get('body') or '').strip()
+    if not title or not body:
+        return jsonify({'error': 'title and body are required'}), 400
+    return jsonify(db.create_template(session['user_id'], title[:80], body)), 201
+
+
+@app.route('/api/templates/<tpl_id>', methods=['DELETE'])
+def api_delete_template(tpl_id):
+    tpl = db.get_template(tpl_id)
+    if not tpl or tpl['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    db.delete_template(tpl_id)
+    return jsonify({'success': True})
+
+
 @app.route('/api/tags')
 def api_list_tags():
     return jsonify(db.list_tags())

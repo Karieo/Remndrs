@@ -125,6 +125,18 @@
   </div>
 </div>
 
+<!-- Manage templates -->
+<div class="overlay" id="templatesOverlay" onclick="if(event.target===this)closeTemplates()">
+  <div class="sheet">
+    <div class="sheet-h">Templates</div>
+    <div class="sheet-sub">Reusable note starters — pick one in the composer</div>
+    <div class="tag-edit-list" id="templatesList"></div>
+    <div class="sheet-foot">
+      <button class="sx go" onclick="closeTemplates()">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings -->
 <div class="overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
   <div class="sheet sheet-wide">
@@ -148,6 +160,11 @@
         <button class="feed-btn active" id="cFeedPrivate" onclick="setComposerFeed('private')">Private</button>
         <button class="feed-btn" id="cFeedShared" onclick="setComposerFeed('shared')">Shared</button>
       </div>
+    </div>
+    <div class="composer-templates">
+      <select id="templatePick" onchange="applyTemplate(this.value)" title="Insert a template"></select>
+      <button type="button" class="sx" onclick="saveAsTemplate()">＋ Save as template</button>
+      <button type="button" class="sx" id="tplManageBtn" onclick="openTemplates()" hidden>Manage</button>
     </div>
     <textarea class="composer-textarea" id="composerText" oninput="updateComposerTags()"></textarea>
     <div class="composer-tagrow" id="composerTags"></div>

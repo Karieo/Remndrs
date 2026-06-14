@@ -1044,9 +1044,60 @@ function openComposer(){
   setComposerMode('note');
   composerAttachments = [];
   renderComposerFiles();
+  renderTemplatePick();
   document.getElementById('composer').classList.add('open');
   updateComposerTags();
   setTimeout(()=>document.getElementById('composerText').focus(),50);
+}
+
+/* ─── Note templates ───────────────────────────────────────── */
+let templates = [];
+async function loadTemplates(){
+  templates = await api('/api/templates').catch(()=>[]);
+  renderTemplatePick();
+}
+function renderTemplatePick(){
+  const sel = document.getElementById('templatePick');
+  if (sel){
+    sel.innerHTML = '<option value="">Templates…</option>'
+      + templates.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join('');
+  }
+  const manage = document.getElementById('tplManageBtn');
+  if (manage) manage.hidden = !templates.length;
+}
+function applyTemplate(id){
+  const sel = document.getElementById('templatePick');
+  const t = templates.find(x=>x.id===id);
+  if (sel) sel.value = '';
+  if (!t) return;
+  const ta = document.getElementById('composerText');
+  // Replace an empty composer; otherwise append below what's already there.
+  ta.value = ta.value.trim() ? ta.value.trimEnd() + '\n\n' + t.body : t.body;
+  updateComposerTags();
+  ta.focus();
+}
+async function saveAsTemplate(){
+  const body = document.getElementById('composerText').value.trim();
+  if (!body){ toast('Write something first'); return; }
+  const title = (prompt('Template name?') || '').trim();
+  if (!title) return;
+  await api('/api/templates', { method:'POST', body: JSON.stringify({ title, body }) }).catch(e=>toast(esc(e.message)));
+  await loadTemplates();
+  toast('Saved template');
+}
+function openTemplates(){
+  document.getElementById('templatesOverlay').classList.add('open');
+  const list = document.getElementById('templatesList');
+  list.innerHTML = templates.length
+    ? templates.map(t=>`<div class="tag-edit-row"><span class="tpl-title">${esc(t.title)}</span>
+        <button class="sx rem-del" onclick="deleteTemplate('${t.id}')" title="Delete template">✕</button></div>`).join('')
+    : '<div class="rem-empty">No templates yet.</div>';
+}
+function closeTemplates(){ document.getElementById('templatesOverlay').classList.remove('open'); }
+async function deleteTemplate(id){
+  await api('/api/templates/'+id, { method:'DELETE' }).catch(()=>{});
+  await loadTemplates();
+  openTemplates();
 }
 
 /* ─── Composer attachments ─────────────────────────────────── */
@@ -1284,6 +1335,7 @@ loadChannelStatus();
 loadTags();
 loadNotes();
 loadPeople();
+loadTemplates();
 refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});
