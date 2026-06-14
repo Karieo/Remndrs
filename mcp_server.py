@@ -30,8 +30,9 @@ SERVER_VERSION = '0'  # app.py injects its VERSION after import
 INSTRUCTIONS = (
     "Remndrs is the user's personal notes and reminders app. Use add_note to "
     "save notes (#hashtags in the content become tags), add_reminder for "
-    "time-based reminders, list_reminders / delete_reminder to see and cancel "
-    "upcoming ones, list_tags to see tags in use, and search_notes / "
+    "time-based reminders, list_reminders / delete_reminder / snooze_reminder "
+    "to see, cancel, or re-arm upcoming ones, list_tags to see tags in use, "
+    "and search_notes / "
     "recent_notes / get_notes_by_tag to find notes (each result carries an "
     "'(id: …)'); pass that id to get_note to read a note in full, to "
     "update_note to edit it, or to complete_todo to check off a checklist "
@@ -380,6 +381,25 @@ def _tool_delete_reminder(user, args):
     return f'Deleted reminder: "{rem["message"]}".'
 
 
+def _tool_snooze_reminder(user, args):
+    rem_id = (args.get('reminder_id') or '').strip()
+    if not rem_id:
+        raise ToolError('reminder_id is required (get it from list_reminders).')
+    rem = db.get_reminder(rem_id)
+    if not rem or rem['user_id'] != user['id']:
+        raise ToolError(f'No reminder with id "{rem_id}" that you own.')
+    when = (args.get('when') or '').strip()
+    fire_at = _parse_when(when)
+    if not fire_at:
+        raise ToolError(f'Could not understand the time "{when}". Try an ISO '
+                        'timestamp like 2026-06-13T09:00 or natural language '
+                        'like "in 2 hours".')
+    if fire_at <= datetime.now():
+        raise ToolError(f'"{when}" reads as a past time — snooze to the future.')
+    db.snooze_reminder(rem['id'], fire_at.isoformat(timespec='seconds'))
+    return f'Snoozed "{rem["message"]}" to {_human_time(fire_at)}.'
+
+
 def _format_notes(notes):
     lines = []
     for n in notes:
@@ -615,6 +635,18 @@ TOOLS = [
          'reminder_id': {'type': 'string',
                          'description': 'The reminder to delete.'}},
          'required': ['reminder_id']}},
+    {'name': 'snooze_reminder',
+     'description': ('Re-arm a reminder to fire again at a later time (get its '
+                     'id from list_reminders). Use when the user wants to be '
+                     'reminded again later instead of cancelling.'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'reminder_id': {'type': 'string',
+                         'description': 'The reminder to snooze.'},
+         'when': {'type': 'string',
+                  'description': 'New time: ISO 8601 ("2026-06-13T18:00") or '
+                                 'natural language ("in 2 hours", "tomorrow at '
+                                 '9am"). Must be in the future.'}},
+         'required': ['reminder_id', 'when']}},
 ]
 
 TOOL_HANDLERS = {
@@ -630,6 +662,7 @@ TOOL_HANDLERS = {
     'complete_todo': _tool_complete_todo,
     'list_tags': _tool_list_tags,
     'delete_reminder': _tool_delete_reminder,
+    'snooze_reminder': _tool_snooze_reminder,
 }
 
 
