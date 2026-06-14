@@ -787,6 +787,38 @@ def api_delete_template(tpl_id):
     return jsonify({'success': True})
 
 
+# ── Saved searches ───────────────────────────────────────
+
+@app.route('/api/saved-searches')
+def api_list_saved_searches():
+    return jsonify(db.list_saved_searches(session['user_id']))
+
+
+@app.route('/api/saved-searches', methods=['POST'])
+def api_create_saved_search():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    tags = data.get('tags') or []
+    if not isinstance(tags, list):
+        return jsonify({'error': 'tags must be a list'}), 400
+    saved = db.create_saved_search(
+        session['user_id'], name[:60],
+        feed=data.get('feed', 'private'), channel=data.get('channel', 'all'),
+        tags=[str(t) for t in tags], search=(data.get('search') or ''))
+    return jsonify(saved), 201
+
+
+@app.route('/api/saved-searches/<sid>', methods=['DELETE'])
+def api_delete_saved_search(sid):
+    s = db.get_saved_search(sid)
+    if not s or s['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    db.delete_saved_search(sid)
+    return jsonify({'success': True})
+
+
 @app.route('/api/tags')
 def api_list_tags():
     return jsonify(db.list_tags())
@@ -1092,6 +1124,32 @@ def api_upload_attachment():
         return jsonify({'error': str(e)}), 400
     return jsonify({'saved_filename': saved,
                     'markdown': attachments_module.markdown_link(saved)}), 201
+
+
+def _strip_attachment_link(content, saved_filename):
+    """Remove an attachment's markdown link (image or file) from a note body."""
+    pattern = (r'!?\[[^\]]*\]\(/api/attachments/'
+               + re.escape(saved_filename) + r'\)[ \t]*\n?')
+    return re.sub(pattern, '', content).strip()
+
+
+@app.route('/api/attachments/<att_id>', methods=['DELETE'])
+def api_delete_attachment(att_id):
+    record = db.get_attachment(att_id)
+    # Only the note's owner can delete its attachments (not share recipients).
+    if not record or record['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    note = db.get_note(record['note_id'])
+    if note:
+        stripped = _strip_attachment_link(note['content'], record['saved_filename'])
+        if stripped != note['content']:
+            note = db.update_note(note['id'], content=stripped)
+            note = _persist_note_file(note)
+            sse.push_note_event('note_updated', note)
+    owner = db.get_user(record['user_id'])
+    attachments_module.delete_file(record['saved_filename'], owner['name'])
+    db.delete_attachment(att_id)
+    return jsonify({'success': True})
 
 
 # ── Voice ────────────────────────────────────────────────

@@ -98,6 +98,51 @@ button { font-family:inherit; }
 .tag-pill.active { background:color-mix(in srgb,var(--tag-color) 15%,var(--surface)); border-color:var(--tag-color); color:var(--tag-color); }
 .tag-pill:not(.active):hover { border-color:var(--border-2); color:var(--text-mid); }
 
+/* ─── Wikilinks ────────────────────────────────────────────── */
+.card-body a[href^="#wiki="], .cal-note a[href^="#wiki="] {
+  color:var(--accent); text-decoration:none; border-bottom:1px dashed var(--accent);
+  cursor:pointer; font-weight:500;
+}
+.card-body a[href^="#wiki="]:hover { background:color-mix(in srgb,var(--accent) 15%,transparent); }
+
+/* ─── Bulk select ──────────────────────────────────────────── */
+.btn-select { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted);
+  border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
+  letter-spacing:0.5px; text-transform:uppercase; padding:0 12px; height:36px; cursor:pointer;
+  flex-shrink:0; transition:all .15s; }
+.btn-select:hover { border-color:var(--border-2); color:var(--text); }
+.btn-select.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+.card.selecting { cursor:pointer; }
+.card.selecting:hover { border-color:var(--border-2); }
+.card.selected { outline:2px solid var(--accent); outline-offset:1px; }
+.select-check { position:absolute; top:8px; right:8px; width:20px; height:20px; border-radius:50%;
+  background:var(--surface-3); border:1px solid var(--border-2); color:transparent;
+  display:flex; align-items:center; justify-content:center; z-index:5; }
+.select-check svg { width:12px; height:12px; }
+.card.selected .select-check { background:var(--accent); border-color:var(--accent); color:var(--bg); }
+.bulk-bar { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:120;
+  display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px;
+  background:var(--surface); border:1px solid var(--border-2); box-shadow:var(--shadow-hover); }
+.bulk-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-mid); padding:0 4px; }
+.bulk-bar .sx.danger { color:#f87171; }
+.bulk-bar .sx:disabled { opacity:.4; cursor:default; }
+
+/* ─── Saved searches ───────────────────────────────────────── */
+.saved-bar { display:flex; align-items:center; gap:6px; padding:0 24px 12px; flex-wrap:wrap; }
+.saved-bar:empty { display:none; }
+.saved-pill { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; letter-spacing:0.3px;
+  padding:4px 8px; border-radius:20px; background:var(--surface); border:1px solid var(--border);
+  color:var(--text-mid); transition:all .15s; }
+.saved-pill:hover { border-color:var(--border-2); color:var(--text); }
+.saved-pill svg { width:11px; height:11px; }
+.saved-del { background:none; border:none; color:var(--text-faint); cursor:pointer; padding:0 0 0 2px; font-size:11px; }
+.saved-del:hover { color:#f87171; }
+.saved-save { background:none; border:1px dashed var(--border-2); color:var(--text-muted);
+  border-radius:20px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
+  letter-spacing:0.3px; padding:4px 10px; cursor:pointer; transition:all .15s; }
+.saved-save:hover { color:var(--accent); border-color:var(--accent); }
+
 /* ─── Cards Grid ───────────────────────────────────────────── */
 .cards-grid { column-count:4; column-gap:14px; padding:4px 24px 64px; }
 @media (max-width:1200px){ .cards-grid{ column-count:3; } }

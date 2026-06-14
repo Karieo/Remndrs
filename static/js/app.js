@@ -24,6 +24,7 @@ const I = {
   archive:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
   clip:'<path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
 };
 const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
@@ -73,9 +74,24 @@ const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 // breaks:true so a single Enter renders as a line break — people type notes
 // line by line and expect those returns honored, not collapsed Markdown-style.
 if (window.marked) marked.setOptions({ breaks: true, gfm: true });
+// [[wikilink]] → a fragment link we intercept to search for that text. Encoded
+// so the href is a plain fragment (DOMPurify keeps it; no colon scheme).
+const wikify = (s) => (s || '').replace(/\[\[([^\[\]\n]+)\]\]/g,
+  (_m, t) => `[${t.trim()}](#wiki=${encodeURIComponent(t.trim())})`);
 const md = (s) => window.DOMPurify
-  ? DOMPurify.sanitize(marked.parse(s || ''))
+  ? DOMPurify.sanitize(marked.parse(wikify(s)))
   : `<p>${esc(s)}</p>`;
+// Delegated handler: clicking a [[wikilink]] runs a search for its text.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="#wiki="]');
+  if (!a) return;
+  e.preventDefault(); e.stopPropagation();
+  const term = decodeURIComponent(a.getAttribute('href').slice(6));
+  const box = document.getElementById('search');
+  if (box) box.value = term;
+  search = term;
+  loadNotes();
+});
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -191,7 +207,9 @@ function cardHTML(n) {
       <button class="card-menu" onclick="toggleMenu(event,'${n.id}')">···</button>
     </div>`;
   const outgoing = activeFeed === 'shared' && shareSenderId(n) === ME.id;
-  return `<div class="card editable ${n.pinned?'pinned':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}" onclick="editNote('${n.id}')" title="Click to edit">
+  const sel = selectMode && selectedIds.has(n.id);
+  return `<div class="card editable ${n.pinned?'pinned':''} ${selectMode?'selecting':''} ${sel?'selected':''} ${shareHead?('shared '+(outgoing?'out':'in')):''}" style="--card-accent:${accentOf(n)||'var(--pinned-border)'}" data-id="${n.id}" onclick="onCardClick('${n.id}')" title="${selectMode?'Click to select':'Click to edit'}">
+    ${selectMode ? `<span class="select-check">${svg('check',12)}</span>` : ''}
     ${header}
     ${tagsRow}
     ${noteBodyHTML(n)}
@@ -362,10 +380,83 @@ function dropdownHTML(n) {
     <div class="dd-item" style="--c:#60a5fa" onclick="openShare('${n.id}')"><span class="di">${svg('reply')}</span> Share with…</div>
     <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
+    ${n.attachments && n.attachments.length ? `<div class="dd-item" onclick="openAttachments('${n.id}')"><span class="di">${svg('clip')}</span> Manage files (${n.attachments.length})</div>` : ''}
     <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
     <div class="dd-item" onclick="archiveNote('${n.id}', ${n.archived?'false':'true'})"><span class="di">${svg('archive')}</span> ${n.archived?'Restore':'Archive'}</div>
     <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
   </div>`;
+}
+
+/* ─── Bulk multi-select ────────────────────────────────────── */
+let selectMode = false, selectedIds = new Set();
+function onCardClick(id){ selectMode ? toggleSelect(id) : editNote(id); }
+function toggleSelectMode(){
+  selectMode = !selectMode;
+  selectedIds.clear();
+  document.getElementById('selectBtn')?.classList.toggle('active', selectMode);
+  renderCards();
+  renderBulkBar();
+}
+function toggleSelect(id){
+  selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
+  document.querySelector(`.card[data-id="${id}"]`)?.classList.toggle('selected', selectedIds.has(id));
+  renderBulkBar();
+}
+function renderBulkBar(){
+  const bar = document.getElementById('bulkBar');
+  if (!bar) return;
+  bar.hidden = !selectMode;
+  const n = selectedIds.size;
+  const count = document.getElementById('bulkCount');
+  if (count) count.textContent = `${n} selected`;
+  bar.querySelectorAll('.bulk-act').forEach(b => b.disabled = !n);
+}
+async function bulkPatch(body){
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  for (const id of ids) await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify(body) }).catch(()=>{});
+  afterBulk(ids.length);
+}
+function bulkMove(feed){ bulkPatch({ feed }); }
+function bulkArchive(){ bulkPatch({ archived: activeFeed !== 'archived' }); }
+async function bulkDelete(){
+  const ids = [...selectedIds];
+  if (!ids.length || !confirm(`Delete ${ids.length} note${ids.length>1?'s':''}?`)) return;
+  for (const id of ids) await api('/api/notes/'+id, { method:'DELETE' }).catch(()=>{});
+  afterBulk(ids.length, 'Deleted');
+}
+function afterBulk(n, verb){
+  selectedIds.clear();
+  toast(`${verb||'Updated'} ${n} note${n>1?'s':''}`);
+  renderBulkBar();
+  loadNotes();
+}
+
+/* ─── Attachment management ────────────────────────────────── */
+let attachmentsNoteId = null;
+function openAttachments(noteId){
+  closeAllMenus();
+  attachmentsNoteId = noteId;
+  document.getElementById('attachmentsOverlay').classList.add('open');
+  renderAttachments();
+}
+function closeAttachments(){ document.getElementById('attachmentsOverlay').classList.remove('open'); }
+function renderAttachments(){
+  const n = notes.find(x=>x.id===attachmentsNoteId);
+  const list = document.getElementById('attachmentsList');
+  const atts = (n && n.attachments) || [];
+  list.innerHTML = atts.length
+    ? atts.map(a=>`<div class="tag-edit-row">
+        <a class="tpl-title" href="/api/attachments/${encodeURIComponent(a.saved_filename)}" target="_blank" rel="noopener">${esc(a.original_filename||a.saved_filename)}</a>
+        <button class="sx rem-del" onclick="deleteAttachment('${a.id}')" title="Delete file">✕</button>
+      </div>`).join('')
+    : '<div class="rem-empty">No files.</div>';
+}
+async function deleteAttachment(id){
+  await api('/api/attachments/'+id, { method:'DELETE' }).catch(e=>toast(esc(e.message)));
+  await loadNotes();
+  renderAttachments();
+  if (!((notes.find(x=>x.id===attachmentsNoteId)||{}).attachments||[]).length) closeAttachments();
 }
 
 /* ─── Render feed ──────────────────────────────────────────── */
@@ -452,6 +543,49 @@ function setFeed(f){
 function onSearchInput(){
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => { search = document.getElementById('search').value.trim(); loadNotes(); }, 250);
+}
+
+/* ─── Saved searches ───────────────────────────────────────── */
+let savedSearches = [];
+async function loadSavedSearches(){
+  savedSearches = await api('/api/saved-searches').catch(()=>[]);
+  renderSavedBar();
+}
+function renderSavedBar(){
+  const bar = document.getElementById('savedBar');
+  if (!bar) return;
+  const pills = savedSearches.map(s =>
+    `<span class="saved-pill" onclick="applySavedSearch('${s.id}')" title="Apply saved search">
+      ${svg('search',11)} ${esc(s.name)}
+      <button class="saved-del" onclick="event.stopPropagation();deleteSavedSearch('${s.id}')" title="Delete">✕</button>
+    </span>`).join('');
+  bar.innerHTML = pills + `<button class="saved-save" onclick="saveCurrentSearch()" title="Save current filters">★ Save search</button>`;
+}
+function currentFilterIsEmpty(){
+  return activeChan === 'all' && !activeTags.size && !search && activeFeed === 'private';
+}
+async function saveCurrentSearch(){
+  if (currentFilterIsEmpty()){ toast('Set a feed, tag, channel, or search first'); return; }
+  const name = (prompt('Name this saved search?') || '').trim();
+  if (!name) return;
+  const saved = await api('/api/saved-searches', { method:'POST', body: JSON.stringify({
+    name, feed: activeFeed, channel: activeChan, tags: [...activeTags], search,
+  }) }).catch(e=>{ toast(esc(e.message)); return null; });
+  if (saved){ await loadSavedSearches(); toast('Saved search'); }
+}
+function applySavedSearch(id){
+  const s = savedSearches.find(x=>x.id===id);
+  if (!s) return;
+  activeChan = s.channel || 'all';
+  activeTags = new Set(s.tags || []);
+  search = s.search || '';
+  document.getElementById('search').value = search;
+  renderTagBar();
+  setFeed(s.feed || 'private');   // setFeed updates the toggle + calls loadNotes()
+}
+async function deleteSavedSearch(id){
+  await api('/api/saved-searches/'+id, { method:'DELETE' }).catch(()=>{});
+  await loadSavedSearches();
 }
 
 /* ─── Menus ────────────────────────────────────────────────── */
@@ -1336,6 +1470,7 @@ loadTags();
 loadNotes();
 loadPeople();
 loadTemplates();
+loadSavedSearches();
 refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});

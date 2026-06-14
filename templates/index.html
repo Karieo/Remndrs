@@ -38,6 +38,7 @@
     <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input class="search-input" type="text" placeholder="Search by text or date…" autocomplete="off" oninput="onSearchInput()" id="search">
   </div>
+  <button class="btn-select" id="selectBtn" onclick="toggleSelectMode()" title="Select multiple notes">Select</button>
   <button class="btn-new" onclick="openComposer()" title="New note (N)">+</button>
 </div>
 
@@ -45,7 +46,19 @@
 
 <div class="tag-bar" id="tagBar"></div>
 
+<div class="saved-bar" id="savedBar"></div>
+
 <main class="cards-grid" id="grid"></main>
+
+<!-- Bulk action bar -->
+<div class="bulk-bar" id="bulkBar" hidden>
+  <span class="bulk-count" id="bulkCount">0 selected</span>
+  <button class="sx bulk-act" onclick="bulkMove('shared')">→ Shared</button>
+  <button class="sx bulk-act" onclick="bulkMove('private')">→ Mine</button>
+  <button class="sx bulk-act" onclick="bulkArchive()">Archive</button>
+  <button class="sx danger bulk-act" onclick="bulkDelete()">Delete</button>
+  <button class="sx go" onclick="toggleSelectMode()">Done</button>
+</div>
 
 <!-- B4 · Send sheet -->
 <div class="overlay" id="sendOverlay" onclick="if(event.target===this)closeSheet()">
@@ -121,6 +134,18 @@
     <div class="tag-edit-list" id="tagEditList"></div>
     <div class="sheet-foot">
       <button class="sx go" onclick="closeTagEdit()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage attachments -->
+<div class="overlay" id="attachmentsOverlay" onclick="if(event.target===this)closeAttachments()">
+  <div class="sheet">
+    <div class="sheet-h">Files on this note</div>
+    <div class="sheet-sub">Delete removes the file and its link from the note</div>
+    <div class="tag-edit-list" id="attachmentsList"></div>
+    <div class="sheet-foot">
+      <button class="sx go" onclick="closeAttachments()">Done</button>
     </div>
   </div>
 </div>

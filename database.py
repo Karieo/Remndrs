@@ -1,5 +1,6 @@
 """SQLite schema and all query functions for Remndrs."""
 
+import json
 import os
 import re
 import sqlite3
@@ -220,6 +221,18 @@ CREATE TABLE IF NOT EXISTS templates (
   user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   body TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS saved_searches (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  feed TEXT NOT NULL DEFAULT 'private',
+  channel TEXT NOT NULL DEFAULT 'all',
+  tags TEXT NOT NULL DEFAULT '[]',
+  search TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -795,6 +808,19 @@ def get_attachment_by_filename(saved_filename):
     return dict(row) if row else None
 
 
+def get_attachment(att_id):
+    with connect() as conn:
+        row = conn.execute(
+            'SELECT a.*, n.user_id, n.feed FROM attachments a '
+            'JOIN notes n ON n.id = a.note_id WHERE a.id = ?', (att_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_attachment(att_id):
+    with connect() as conn:
+        conn.execute('DELETE FROM attachments WHERE id = ?', (att_id,))
+
+
 # ── Reminders ────────────────────────────────────────────
 
 def create_reminder(user_id, message, fire_at, notify_sms=True, notify_web=True,
@@ -932,6 +958,46 @@ def list_templates(user_id):
 def delete_template(tpl_id):
     with connect() as conn:
         conn.execute('DELETE FROM templates WHERE id = ?', (tpl_id,))
+
+
+# ── Saved searches ───────────────────────────────────────
+
+def _saved_search_to_dict(row):
+    d = dict(row)
+    try:
+        d['tags'] = json.loads(d.get('tags') or '[]')
+    except (ValueError, TypeError):
+        d['tags'] = []
+    return d
+
+
+def create_saved_search(user_id, name, feed='private', channel='all', tags=None, search=''):
+    sid = str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO saved_searches (id, user_id, name, feed, channel, tags, '
+            'search, created_at) VALUES (?,?,?,?,?,?,?,?)',
+            (sid, user_id, name, feed, channel, json.dumps(tags or []),
+             search or '', now_iso()))
+    return get_saved_search(sid)
+
+
+def get_saved_search(sid):
+    with connect() as conn:
+        row = conn.execute('SELECT * FROM saved_searches WHERE id = ?', (sid,)).fetchone()
+    return _saved_search_to_dict(row) if row else None
+
+
+def list_saved_searches(user_id):
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT * FROM saved_searches WHERE user_id = ? ORDER BY name', (user_id,)).fetchall()
+    return [_saved_search_to_dict(r) for r in rows]
+
+
+def delete_saved_search(sid):
+    with connect() as conn:
+        conn.execute('DELETE FROM saved_searches WHERE id = ?', (sid,))
 
 
 # ── Link previews ────────────────────────────────────────
