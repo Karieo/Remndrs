@@ -296,6 +296,9 @@ button { font-family:inherit; }
 .rem-digest-label select { background:var(--surface-2); border:1px solid var(--border); border-radius:6px;
   color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:4px 8px; outline:none; }
 .rem-digest-hint { display:block; margin-top:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
+.rem-push { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding-top:12px; margin-bottom:12px; border-top:1px solid var(--border); }
+.rem-push-hint { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
 .build-stamp { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.4px; text-align:center; user-select:all; }
 /* In the settings footer the auto margin pushes the stamp left of the Done
    button. It must stay scoped here: on the login page (a centered flex body)
@@ -360,7 +363,8 @@ button { font-family:inherit; }
 .reminder-banner { display:flex; align-items:center; gap:10px; background:color-mix(in srgb,var(--accent) 16%,var(--bg)); border-bottom:1px solid var(--accent); padding:9px 24px; font-size:13px; }
 .reminder-banner .rb-icon { color:var(--accent); display:flex; }
 .reminder-banner .rb-icon svg { width:14px; height:14px; }
-.reminder-banner button { margin-left:auto; }
+.reminder-banner .rb-msg { flex:1; min-width:0; }
+.reminder-banner .rb-actions { display:flex; gap:6px; margin-left:auto; flex-shrink:0; }
 
 /* ─── Composer ─────────────────────────────────────────────── */
 .composer-overlay { position:fixed; inset:0; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:80px 20px 20px; backdrop-filter:blur(3px); overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
@@ -391,6 +395,7 @@ button { font-family:inherit; }
 .composer-remind input[type=datetime-local] { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; color-scheme:dark; }
 :root[data-theme="light"] .composer-remind input[type=datetime-local] { color-scheme:light; }
 .composer-remind label { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
+.composer-remind .composer-repeat { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; }
 .composer-attach { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:0 16px 12px; }
 .composer-attach-btn { display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; letter-spacing:0.3px; padding:3px 9px; cursor:pointer; transition:all .15s; }
 .composer-attach-btn:hover { border-color:var(--border-2); color:var(--text-mid); }

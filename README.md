@@ -155,6 +155,9 @@ remind phrase (see [Email](#email)). When a reminder fires you get, all at
 once:
 
 - a persistent banner in any open web tab (dismissable, stays dismissed),
+- a **web push notification** even when no tab is open, on any device where
+  you've tapped *Enable push* in the ⏰ Reminders panel (needs VAPID keys — see
+  [Web push](#web-push)),
 - an SMS to your phone (if Twilio is configured),
 - an iOS notification (if the app is installed — synced even in background).
 
@@ -394,6 +397,21 @@ transcription of phone-call recordings and the iPhone app's voice capture.
 Audio is limited to 25MB (Whisper's limit — roughly 45+ minutes at phone
 quality).
 
+### Web push
+
+To get reminder notifications when no browser tab is open, set three env vars
+(in `.env`):
+
+- `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` — generate a keypair once with
+  `vapid --gen` (the `py-vapid` CLI ships with `pywebpush`), or any VAPID
+  generator.
+- `VAPID_SUBJECT` — a contact, e.g. `mailto:you@example.com`.
+
+Then open the ⏰ Reminders panel and tap **Enable push on this device** (grant
+the browser's notification prompt). Repeat per device/browser. Push requires
+https — the Cloudflare Tunnel covers that. With the keys unset, the toggle
+stays hidden and reminders fall back to the in-tab banner / SMS / iOS paths.
+
 ### Mailgun (Email inbound)
 
 Requires a custom domain (Mailgun's sandbox domain works for testing only).
@@ -448,10 +466,13 @@ address), since claude.ai reaches the server from outside.
 Pressing Connect again **revokes the old URL** and mints a fresh one — do
 that any time you think the URL leaked (it's a bearer secret; treat it like
 a password). Tools exposed: `add_note`, `add_reminder`, `attach_file`,
-`search_notes`, `recent_notes`, `get_notes_by_tag` — `attach_file` saves a
-file (Markdown, PDF, image, …) to a note as a real attachment instead of
-pasting its text into the body, and Claude can read your notes through the
-last three, so only connect accounts you trust with that.
+`update_note`, `complete_todo`, `get_note`, `search_notes`, `recent_notes`,
+`get_notes_by_tag`, `list_tags`, `list_reminders`, `snooze_reminder`,
+`delete_reminder` — `attach_file` saves a file (Markdown, PDF, image, …) to a
+note as a real attachment instead of pasting its text into the body,
+`snooze_reminder` re-arms a reminder for later, and Claude can read and edit
+your notes through the read/update tools, so only connect accounts you trust
+with that.
 
 ---
 

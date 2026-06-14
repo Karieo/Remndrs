@@ -57,6 +57,7 @@ import sse
 import telegram
 import mcp_server
 import voice
+import webpush
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -146,7 +147,7 @@ seed_owner()
 # ── Auth ─────────────────────────────────────────────────
 
 PUBLIC_PATHS = ('/login', '/api/auth/login', '/api/auth/token', '/api/version',
-                '/webhooks/', '/static/', '/mcp')
+                '/webhooks/', '/static/', '/mcp', '/sw.js', '/manifest.json')
 
 
 def _hash_token(token):
@@ -811,8 +812,50 @@ def api_create_reminder():
         session['user_id'], data['message'], data['fire_at'],
         notify_sms=data.get('notify_sms', True),
         notify_web=data.get('notify_web', True),
-        note_id=data.get('note_id'))
+        note_id=data.get('note_id'),
+        recurrence=reminders.normalize_recurrence(data.get('recurrence')))
     return jsonify(reminder), 201
+
+
+def _snooze_fire_at(data):
+    """Resolve a snooze request to a naive-local ISO fire time, or None if the
+    request is malformed. Presets are computed from the server clock so they
+    match the wall-clock zone reminders fire in (the browser's zone may differ)."""
+    minutes = data.get('minutes')
+    if minutes is not None:
+        try:
+            mins = int(minutes)
+        except (TypeError, ValueError):
+            return None
+        return ((datetime.now() + timedelta(minutes=mins)).isoformat(timespec='seconds')
+                if mins > 0 else None)
+    now = datetime.now()
+    preset = (data.get('preset') or '').strip().lower()
+    if preset == '1h':
+        target = now + timedelta(hours=1)
+    elif preset == 'tonight':
+        target = now.replace(hour=18, minute=0, second=0, microsecond=0)
+        if target <= now:                       # already evening — just give an hour
+            target = now + timedelta(hours=1)
+    elif preset == 'tomorrow':
+        target = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0,
+                                                   microsecond=0)
+    else:
+        return None
+    return target.isoformat(timespec='seconds')
+
+
+@app.route('/api/reminders/<rem_id>/snooze', methods=['POST'])
+def api_snooze_reminder(rem_id):
+    reminder = db.get_reminder(rem_id)
+    if not reminder or reminder['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    fire_at = _snooze_fire_at(request.get_json(silent=True) or {})
+    if not fire_at:
+        return jsonify({'error': 'Provide a positive "minutes" or a "preset" '
+                        'of 1h/tonight/tomorrow'}), 400
+    db.snooze_reminder(rem_id, fire_at)
+    return jsonify(db.get_reminder(rem_id))
 
 
 @app.route('/api/reminders/<rem_id>/dismiss', methods=['POST'])
@@ -831,6 +874,51 @@ def api_delete_reminder(rem_id):
         return jsonify({'error': 'Not found'}), 404
     db.delete_reminder(rem_id)
     return jsonify({'success': True})
+
+
+# ── Web push ─────────────────────────────────────────────
+
+@app.route('/api/push/key')
+def api_push_key():
+    """The VAPID public key + whether push is configured, for the client to
+    decide whether to offer the subscribe toggle."""
+    return jsonify({'configured': webpush.configured(),
+                    'publicKey': webpush.public_key()})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+def api_push_subscribe():
+    data = request.get_json(silent=True) or {}
+    endpoint = data.get('endpoint')
+    if not endpoint:
+        return jsonify({'error': 'endpoint required'}), 400
+    db.add_push_subscription(session['user_id'], endpoint, json.dumps(data))
+    return jsonify({'success': True}), 201
+
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+def api_push_unsubscribe():
+    endpoint = (request.get_json(silent=True) or {}).get('endpoint')
+    if endpoint:
+        db.delete_push_subscription(endpoint)
+    return jsonify({'success': True})
+
+
+# ── PWA: service worker + manifest (served at root for root scope) ───────────
+
+@app.route('/sw.js')
+def service_worker():
+    resp = send_file(os.path.join(_APP_DIR, 'static', 'sw.js'),
+                     mimetype='application/javascript')
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.route('/manifest.json')
+def web_manifest():
+    return send_file(os.path.join(_APP_DIR, 'static', 'manifest.json'),
+                     mimetype='application/manifest+json')
 
 
 # ── Link preview ─────────────────────────────────────────

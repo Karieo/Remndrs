@@ -936,18 +936,34 @@ function showReminderBanner(rem){
   const div = document.createElement('div');
   div.className = 'reminder-banner';
   div.dataset.reminder = rem.id;
-  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> ${esc(rem.message)} <button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`;
+  div.innerHTML = `<span class="rb-icon">${svg('bell')}</span> <span class="rb-msg">${esc(rem.message)}</span>`
+    + `<span class="rb-actions">`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','1h')">+1h</button>`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','tonight')">Tonight</button>`
+    + `<button class="sx" onclick="snoozeReminder('${rem.id}','tomorrow')">Tomorrow</button>`
+    + `<button class="sx" onclick="dismissReminder('${rem.id}')">Dismiss</button>`
+    + `</span>`;
   document.getElementById('reminderBanners').appendChild(div);
+}
+function _forgetBanner(id){
+  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
+  dismissed.push(id);
+  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
+  document.querySelector(`[data-reminder="${id}"]`)?.remove();
 }
 function dismissReminder(id){
   // Remember it for this tab immediately (snappy), then persist server-side so
   // the dismissal sticks across reloads and other devices — otherwise the
   // /api/reminders/pending fallback keeps re-showing it for 24h.
-  const dismissed = JSON.parse(sessionStorage.getItem('dismissedReminders') || '[]');
-  dismissed.push(id);
-  sessionStorage.setItem('dismissedReminders', JSON.stringify(dismissed));
-  document.querySelector(`[data-reminder="${id}"]`)?.remove();
+  _forgetBanner(id);
   api('/api/reminders/'+id+'/dismiss', { method:'POST' }).catch(()=>{});
+}
+function snoozeReminder(id, preset){
+  // Clear the banner now; re-arm the reminder server-side for a later time.
+  _forgetBanner(id);
+  api('/api/reminders/'+id+'/snooze', { method:'POST', body: JSON.stringify({ preset }) })
+    .then(r => { toast(`⏰ Snoozed · ${fmtDate(r.fire_at)}`); refreshReminderCount(); })
+    .catch(()=> toast('Could not snooze'));
 }
 
 /* ─── Upcoming reminders ───────────────────────────────────── */
@@ -981,6 +997,15 @@ async function saveDigestHour(val){
 async function openReminders(){
   document.getElementById('remindersOverlay').classList.add('open');
   loadDigestHour();
+function recurrenceLabel(rrule){
+  return ({
+    'FREQ=DAILY': 'daily', 'FREQ=WEEKLY': 'weekly', 'FREQ=MONTHLY': 'monthly',
+    'FREQ=YEARLY': 'yearly', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR': 'weekdays',
+  })[rrule] || 'repeats';
+}
+async function openReminders(){
+  document.getElementById('remindersOverlay').classList.add('open');
+  refreshPushButton();
   const list = document.getElementById('remindersList');
   list.innerHTML = '<div class="rem-empty">Loading…</div>';
   const rems = await refreshReminderCount();
@@ -988,7 +1013,7 @@ async function openReminders(){
   list.innerHTML = rems.map(r => `
     <div class="rem-row" data-rem="${r.id}">
       <div class="rem-text">
-        <div class="rem-when">${fmtDate(r.fire_at)}</div>
+        <div class="rem-when">${fmtDate(r.fire_at)}${r.recurrence ? ' · 🔁 '+esc(recurrenceLabel(r.recurrence)) : ''}</div>
         <div class="rem-msg">${esc(r.message)}</div>
       </div>
       <button class="sx rem-del" onclick="deleteReminder('${r.id}')" title="Cancel reminder">✕</button>
@@ -1185,6 +1210,7 @@ async function saveNote(){
       await api('/api/reminders', { method:'POST', body: JSON.stringify({
         message: body.content.split('\n')[0].slice(0,120),
         fire_at: document.getElementById('remindAt').value + ':00',
+        recurrence: document.getElementById('remindRepeat').value || undefined,
         notify_web: true, notify_sms: true, note_id: note.id,
       }) });
       note.reminder = { fire_at: document.getElementById('remindAt').value + ':00' };
@@ -1193,6 +1219,8 @@ async function saveNote(){
     document.getElementById('remindOn').checked = false;
     document.getElementById('remindAt').hidden = true;
     document.getElementById('remindAt').value = '';
+    document.getElementById('remindRepeat').hidden = true;
+    document.getElementById('remindRepeat').value = '';
     const wasEditing = !!editingNoteId;
     editingNoteId = null;
     closeComposer();
@@ -1260,3 +1288,4 @@ refreshSharedBadge();
 startStream();
 api('/api/reminders/pending').then(rems => (rems||[]).forEach(showReminderBanner)).catch(()=>{});
 refreshReminderCount();
+initPush();

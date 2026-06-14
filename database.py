@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   notify_web INTEGER NOT NULL DEFAULT 1,
   fired INTEGER NOT NULL DEFAULT 0,
   acknowledged INTEGER NOT NULL DEFAULT 0,
+  recurrence TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -205,6 +206,15 @@ CREATE TABLE IF NOT EXISTS note_replies (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  subscription TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   content,
   content='notes',
@@ -258,6 +268,8 @@ def _migrate(conn):
     if 'acknowledged' not in rem_cols:
         conn.execute('ALTER TABLE reminders ADD COLUMN acknowledged '
                      'INTEGER NOT NULL DEFAULT 0')
+    if 'recurrence' not in rem_cols:
+        conn.execute('ALTER TABLE reminders ADD COLUMN recurrence TEXT')
 
 
 def normalize_tag(name):
@@ -776,14 +788,17 @@ def get_attachment_by_filename(saved_filename):
 
 # ── Reminders ────────────────────────────────────────────
 
-def create_reminder(user_id, message, fire_at, notify_sms=True, notify_web=True, note_id=None):
+def create_reminder(user_id, message, fire_at, notify_sms=True, notify_web=True,
+                    note_id=None, recurrence=None):
     rem_id = str(uuid.uuid4())
     with connect() as conn:
         conn.execute(
             'INSERT INTO reminders (id, user_id, note_id, message, fire_at, '
-            'notify_sms, notify_web, fired, created_at) VALUES (?,?,?,?,?,?,?,0,?)',
+            'notify_sms, notify_web, fired, recurrence, created_at) '
+            'VALUES (?,?,?,?,?,?,?,0,?,?)',
             (rem_id, user_id, note_id, message, fire_at,
-             1 if notify_sms else 0, 1 if notify_web else 0, now_iso()))
+             1 if notify_sms else 0, 1 if notify_web else 0,
+             recurrence or None, now_iso()))
     return get_reminder(rem_id)
 
 
@@ -829,6 +844,15 @@ def acknowledge_reminder(rem_id):
         conn.execute('UPDATE reminders SET acknowledged = 1 WHERE id = ?', (rem_id,))
 
 
+def snooze_reminder(rem_id, fire_at):
+    """Re-arm a (usually already-fired) reminder for a later time. Clears fired
+    and acknowledged so the 60s dispatcher runs it again and the banner can
+    resurface when it next fires."""
+    with connect() as conn:
+        conn.execute('UPDATE reminders SET fire_at = ?, fired = 0, '
+                     'acknowledged = 0 WHERE id = ?', (fire_at, rem_id))
+
+
 def delete_reminder(rem_id):
     with connect() as conn:
         conn.execute('DELETE FROM reminders WHERE id = ?', (rem_id,))
@@ -844,6 +868,32 @@ def get_due_reminders(now):
 def mark_reminder_fired(rem_id):
     with connect() as conn:
         conn.execute('UPDATE reminders SET fired = 1 WHERE id = ?', (rem_id,))
+
+
+# ── Web push subscriptions ───────────────────────────────
+
+def add_push_subscription(user_id, endpoint, subscription_json):
+    """Store (or refresh) a browser push subscription, keyed by its endpoint so
+    re-subscribing the same device replaces the old row instead of duplicating."""
+    with connect() as conn:
+        conn.execute(
+            'INSERT INTO push_subscriptions (id, user_id, endpoint, subscription, '
+            'created_at) VALUES (?,?,?,?,?) '
+            'ON CONFLICT(endpoint) DO UPDATE SET '
+            'user_id = excluded.user_id, subscription = excluded.subscription',
+            (str(uuid.uuid4()), user_id, endpoint, subscription_json, now_iso()))
+
+
+def list_push_subscriptions(user_id):
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT * FROM push_subscriptions WHERE user_id = ?', (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_push_subscription(endpoint):
+    with connect() as conn:
+        conn.execute('DELETE FROM push_subscriptions WHERE endpoint = ?', (endpoint,))
 
 
 # ── Link previews ────────────────────────────────────────

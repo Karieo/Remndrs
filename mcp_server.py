@@ -19,6 +19,7 @@ from datetime import datetime
 import attachments
 import database as db
 import files
+import reminders as reminders_mod  # recurrence parsing (parse/normalize/describe)
 import sms  # reuse the channel helpers (extract_hashtags/_snippet/_fmt_date)
 import sse
 
@@ -30,8 +31,9 @@ SERVER_VERSION = '0'  # app.py injects its VERSION after import
 INSTRUCTIONS = (
     "Remndrs is the user's personal notes and reminders app. Use add_note to "
     "save notes (#hashtags in the content become tags), add_reminder for "
-    "time-based reminders, list_reminders / delete_reminder to see and cancel "
-    "upcoming ones, list_tags to see tags in use, and search_notes / "
+    "time-based reminders, list_reminders / delete_reminder / snooze_reminder "
+    "to see, cancel, or re-arm upcoming ones, list_tags to see tags in use, "
+    "and search_notes / "
     "recent_notes / get_notes_by_tag to find notes (each result carries an "
     "'(id: …)'); pass that id to get_note to read a note in full, to "
     "update_note to edit it, or to complete_todo to check off a checklist "
@@ -87,6 +89,19 @@ def _human_time(fire_at):
     return fire_at.strftime('%A, %B %-d at %-I:%M %p')
 
 
+_RECUR_LABELS = {
+    'FREQ=DAILY': 'daily',
+    'FREQ=WEEKLY': 'weekly',
+    'FREQ=MONTHLY': 'monthly',
+    'FREQ=YEARLY': 'yearly',
+    'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR': 'on weekdays',
+}
+
+
+def _describe_recurrence(rrule):
+    return _RECUR_LABELS.get(rrule, 'on a schedule') if rrule else ''
+
+
 def _tool_add_note(user, args):
     content = (args.get('content') or '').strip()
     if not content:
@@ -124,10 +139,13 @@ def _tool_add_note(user, args):
 
     reminder_line = ''
     if fire_at:
+        recurrence = reminders_mod.normalize_recurrence(args.get('repeat'))
         db.create_reminder(user['id'], content.split('\n')[0][:120],
                            fire_at.isoformat(timespec='seconds'),
-                           notify_sms=True, notify_web=True, note_id=note['id'])
-        reminder_line = f' Reminder set for {_human_time(fire_at)}.'
+                           notify_sms=True, notify_web=True, note_id=note['id'],
+                           recurrence=recurrence)
+        repeat_note = f' (repeats {_describe_recurrence(recurrence)})' if recurrence else ''
+        reminder_line = f' Reminder set for {_human_time(fire_at)}{repeat_note}.'
 
     title = content.split('\n')[0][:60]
     extras = f' with {len(todos)} checklist items' if todos else ''
@@ -152,10 +170,12 @@ def _tool_add_reminder(user, args):
                         f'({fire_at.isoformat(timespec="minutes")}) — '
                         'reminders must be in the future.')
 
+    recurrence = reminders_mod.normalize_recurrence(args.get('repeat'))
     db.create_reminder(user['id'], message,
                        fire_at.isoformat(timespec='seconds'),
-                       notify_sms=True, notify_web=True)
-    return f'Reminder set for {_human_time(fire_at)}: "{message}"'
+                       notify_sms=True, notify_web=True, recurrence=recurrence)
+    repeat_note = f' (repeats {_describe_recurrence(recurrence)})' if recurrence else ''
+    return f'Reminder set for {_human_time(fire_at)}{repeat_note}: "{message}"'
 
 
 def _tool_attach_file(user, args):
@@ -227,7 +247,8 @@ def _tool_list_reminders(user, args):
     for r in reminders:
         fire_at = _parse_when(r['fire_at'])
         when = _human_time(fire_at) if fire_at else r['fire_at']
-        lines.append(f"• {when} — {r['message']}  (id: {r['id']})")
+        rep = f" · repeats {_describe_recurrence(r['recurrence'])}" if r.get('recurrence') else ''
+        lines.append(f"• {when} — {r['message']}{rep}  (id: {r['id']})")
     return f'{len(reminders)} upcoming reminder(s):\n' + '\n'.join(lines)
 
 
@@ -380,6 +401,25 @@ def _tool_delete_reminder(user, args):
     return f'Deleted reminder: "{rem["message"]}".'
 
 
+def _tool_snooze_reminder(user, args):
+    rem_id = (args.get('reminder_id') or '').strip()
+    if not rem_id:
+        raise ToolError('reminder_id is required (get it from list_reminders).')
+    rem = db.get_reminder(rem_id)
+    if not rem or rem['user_id'] != user['id']:
+        raise ToolError(f'No reminder with id "{rem_id}" that you own.')
+    when = (args.get('when') or '').strip()
+    fire_at = _parse_when(when)
+    if not fire_at:
+        raise ToolError(f'Could not understand the time "{when}". Try an ISO '
+                        'timestamp like 2026-06-13T09:00 or natural language '
+                        'like "in 2 hours".')
+    if fire_at <= datetime.now():
+        raise ToolError(f'"{when}" reads as a past time — snooze to the future.')
+    db.snooze_reminder(rem['id'], fire_at.isoformat(timespec='seconds'))
+    return f'Snoozed "{rem["message"]}" to {_human_time(fire_at)}.'
+
+
 def _format_notes(notes):
     lines = []
     for n in notes:
@@ -455,7 +495,12 @@ TOOLS = [
                                       '("2026-06-13T09:00") or natural '
                                       'language ("tomorrow at 9am"). Must be '
                                       'in the future; UTC/offset times are '
-                                      "converted to the user's local time."}},
+                                      "converted to the user's local time."},
+         'repeat': {'type': 'string',
+                    'description': 'Optional recurrence for the note\'s reminder '
+                                   '(needs remind_at): "daily", "weekly", '
+                                   '"monthly", "yearly", "weekdays", or "every '
+                                   '<weekday>". Omit for a one-off.'}},
          'required': ['content']}},
     {'name': 'add_reminder',
      'description': ('Set a reminder that notifies the user in the app (and '
@@ -471,7 +516,13 @@ TOOLS = [
                                  "user's local timezone; UTC/offset times "
                                  '(e.g. with a Z suffix) are converted to it.'},
          'message': {'type': 'string',
-                     'description': 'What to remind the user about.'}},
+                     'description': 'What to remind the user about.'},
+         'repeat': {'type': 'string',
+                    'description': 'Optional recurrence so the reminder repeats: '
+                                   '"daily", "weekly", "monthly", "yearly", '
+                                   '"weekdays", or "every <weekday>" (e.g. '
+                                   '"every monday"). A raw iCal RRULE is also '
+                                   'accepted. Omit for a one-off reminder.'}},
          'required': ['when', 'message']}},
     {'name': 'attach_file',
      'description': ('Attach a file (a Markdown/.md document, text file, PDF, '
@@ -615,6 +666,18 @@ TOOLS = [
          'reminder_id': {'type': 'string',
                          'description': 'The reminder to delete.'}},
          'required': ['reminder_id']}},
+    {'name': 'snooze_reminder',
+     'description': ('Re-arm a reminder to fire again at a later time (get its '
+                     'id from list_reminders). Use when the user wants to be '
+                     'reminded again later instead of cancelling.'),
+     'inputSchema': {'type': 'object', 'properties': {
+         'reminder_id': {'type': 'string',
+                         'description': 'The reminder to snooze.'},
+         'when': {'type': 'string',
+                  'description': 'New time: ISO 8601 ("2026-06-13T18:00") or '
+                                 'natural language ("in 2 hours", "tomorrow at '
+                                 '9am"). Must be in the future.'}},
+         'required': ['reminder_id', 'when']}},
 ]
 
 TOOL_HANDLERS = {
@@ -630,6 +693,7 @@ TOOL_HANDLERS = {
     'complete_todo': _tool_complete_todo,
     'list_tags': _tool_list_tags,
     'delete_reminder': _tool_delete_reminder,
+    'snooze_reminder': _tool_snooze_reminder,
 }
 
 

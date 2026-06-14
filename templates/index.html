@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Remndrs — Feed</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1c1814">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -72,6 +74,9 @@
         <select id="digestHour" onchange="saveDigestHour(this.value)"></select>
       </label>
       <span class="rem-digest-hint">A summary of new notes + today's reminders, sent by email/SMS.</span>
+    <div class="rem-push" id="remPush" hidden>
+      <button class="sx" id="pushToggle" onclick="togglePush()">Enable push on this device</button>
+      <span class="rem-push-hint">Get reminders even when no tab is open.</span>
     </div>
     <div class="sheet-foot">
       <button class="sx" onclick="closeReminders()">Close</button>
@@ -148,8 +153,16 @@
     <div class="composer-tagrow" id="composerTags"></div>
     <div class="composer-tagsuggest" id="composerSuggest"></div>
     <div class="composer-remind">
-      <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked"> ⏰ remind me</label>
+      <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked; document.getElementById('remindRepeat').hidden=!this.checked"> ⏰ remind me</label>
       <input type="datetime-local" id="remindAt" hidden>
+      <select id="remindRepeat" class="composer-repeat" hidden title="Repeat">
+        <option value="">Once</option>
+        <option value="daily">Daily</option>
+        <option value="weekdays">Weekdays</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="yearly">Yearly</option>
+      </select>
     </div>
     <div class="composer-attach">
       <input type="file" id="composerFilePicker" hidden multiple
