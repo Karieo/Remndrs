@@ -158,6 +158,10 @@ once:
 - an SMS to your phone (if Twilio is configured),
 - an iOS notification (if the app is installed — synced even in background).
 
+**Daily digest** — in the ⏰ Reminders panel, pick an hour for a once-a-day
+summary of the last 24h of notes plus the day's reminders, delivered by email
+(Mailgun) and/or SMS (Twilio). Set it to *Off* to disable.
+
 ### Send a note anywhere
 
 Every card's `···` menu can push the note back out:

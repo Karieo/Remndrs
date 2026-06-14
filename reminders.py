@@ -87,11 +87,22 @@ def run_calendar_sync():
         log.exception('Calendar sync failed')
 
 
+def run_daily_digests():
+    """Top of every hour: send the digest to anyone scheduled for this hour."""
+    try:
+        import digest
+        digest.send_digests_for_hour(datetime.now().hour)
+    except Exception:
+        log.exception('Daily digest run failed')
+
+
 def start():
     if scheduler.running:
         return
     scheduler.add_job(check_reminders, 'interval', seconds=60)
     scheduler.add_job(run_calendar_sync, 'interval', minutes=10)
+    scheduler.add_job(run_daily_digests, 'cron', minute=0)
     scheduler.start()
-    log.info('Scheduler started — reminder dispatch every 60s, calendar sync every 10m')
+    log.info('Scheduler started — reminders every 60s, calendar every 10m, '
+             'digest hourly')
     atexit.register(lambda: scheduler.shutdown(wait=False))

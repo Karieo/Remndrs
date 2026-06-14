@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
   telegram_chat_id TEXT,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member',
+  digest_hour INTEGER,
+  digest_last_sent TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -248,6 +250,10 @@ def _migrate(conn):
     note_cols = {r['name'] for r in conn.execute('PRAGMA table_info(notes)')}
     if 'archived' not in note_cols:
         conn.execute('ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+    if 'digest_hour' not in cols:
+        conn.execute('ALTER TABLE users ADD COLUMN digest_hour INTEGER')
+    if 'digest_last_sent' not in cols:
+        conn.execute('ALTER TABLE users ADD COLUMN digest_last_sent TEXT')
     rem_cols = {r['name'] for r in conn.execute('PRAGMA table_info(reminders)')}
     if 'acknowledged' not in rem_cols:
         conn.execute('ALTER TABLE reminders ADD COLUMN acknowledged '
@@ -325,6 +331,45 @@ def update_user_contact(user_id, email=None, phone_number=None, twilio_number=No
         with connect() as conn:
             conn.execute(f'UPDATE users SET {", ".join(sets)} WHERE id = ?', params)
     return get_user(user_id)
+
+
+def set_user_digest_hour(user_id, hour):
+    """Set the local hour (0-23) the daily digest is sent, or None to disable."""
+    with connect() as conn:
+        conn.execute('UPDATE users SET digest_hour = ? WHERE id = ?', (hour, user_id))
+    return get_user(user_id)
+
+
+def users_for_digest_hour(hour):
+    """Users who want their digest at this local hour and haven't had today's."""
+    with connect() as conn:
+        rows = conn.execute('SELECT * FROM users WHERE digest_hour = ?', (hour,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_digest_sent(user_id, day):
+    with connect() as conn:
+        conn.execute('UPDATE users SET digest_last_sent = ? WHERE id = ?', (day, user_id))
+
+
+def notes_since(user_id, since_iso):
+    """A user's visible (own private + anyone's shared), non-archived notes
+    created at/after the given ISO time, newest first — for the daily digest."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM notes WHERE created_at >= ? AND archived = 0 "
+            "AND (user_id = ? OR feed = 'shared') ORDER BY created_at DESC",
+            (since_iso, user_id)).fetchall()
+    return [note_to_dict(r) for r in rows]
+
+
+def reminders_today(user_id, before_iso):
+    """A user's still-pending reminders firing before the given ISO cutoff."""
+    with connect() as conn:
+        rows = conn.execute(
+            'SELECT * FROM reminders WHERE user_id = ? AND fired = 0 AND fire_at < ? '
+            'ORDER BY fire_at', (user_id, before_iso)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def count_users():

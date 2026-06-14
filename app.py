@@ -627,25 +627,38 @@ def api_list_users():
     return jsonify([{'id': u['id'], 'name': u['name']} for u in db.list_users()])
 
 
+_ME_FIELDS = ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
+              'telegram_chat_id', 'digest_hour')
+
+
 @app.route('/api/users/me')
 def api_get_me():
     user = current_user()
-    return jsonify({k: user.get(k) for k in
-                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
-                     'telegram_chat_id')})
+    return jsonify({k: user.get(k) for k in _ME_FIELDS})
 
 
 @app.route('/api/users/me', methods=['PATCH'])
 def api_update_me():
     data = request.get_json(silent=True) or {}
-    user = db.update_user_contact(session['user_id'],
-                                  email=data.get('email'),
-                                  phone_number=data.get('phone_number'),
-                                  twilio_number=data.get('twilio_number'),
-                                  telegram_chat_id=data.get('telegram_chat_id'))
-    return jsonify({k: user.get(k) for k in
-                    ('id', 'name', 'role', 'email', 'phone_number', 'twilio_number',
-                     'telegram_chat_id')})
+    db.update_user_contact(session['user_id'],
+                           email=data.get('email'),
+                           phone_number=data.get('phone_number'),
+                           twilio_number=data.get('twilio_number'),
+                           telegram_chat_id=data.get('telegram_chat_id'))
+    if 'digest_hour' in data:
+        hour = data['digest_hour']
+        if hour in (None, ''):
+            db.set_user_digest_hour(session['user_id'], None)
+        else:
+            try:
+                hour = int(hour)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'digest_hour must be 0-23 or null'}), 400
+            if not 0 <= hour <= 23:
+                return jsonify({'error': 'digest_hour must be 0-23 or null'}), 400
+            db.set_user_digest_hour(session['user_id'], hour)
+    user = current_user()
+    return jsonify({k: user.get(k) for k in _ME_FIELDS})
 
 
 @app.route('/api/users', methods=['POST'])

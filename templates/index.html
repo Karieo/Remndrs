@@ -67,6 +67,12 @@
     <div class="sheet-h">Upcoming reminders</div>
     <div class="sheet-sub">Scheduled from the app, SMS, Telegram, or Claude</div>
     <div class="rem-list" id="remindersList"></div>
+    <div class="rem-digest">
+      <label class="rem-digest-label">📬 Daily digest
+        <select id="digestHour" onchange="saveDigestHour(this.value)"></select>
+      </label>
+      <span class="rem-digest-hint">A summary of new notes + today's reminders, sent by email/SMS.</span>
+    </div>
     <div class="sheet-foot">
       <button class="sx" onclick="closeReminders()">Close</button>
     </div>
