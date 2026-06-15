@@ -95,7 +95,8 @@ def _note_body(note):
     todos = note.get('todos') or []
     if todos:
         lines = [
-            f'- [{"x" if t["checked"] else " "}] {t["text"]}'
+            '  ' * int(t.get('indent') or 0)
+            + f'- [{"x" if t["checked"] else " "}] {t["text"]}'
             + (f' 📅 {t["due_at"]}' if t.get('due_at') else '')
             for t in todos]
         body = (body + '\n\n' if body.strip() else '') + '\n'.join(lines)
