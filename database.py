@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   channel TEXT NOT NULL DEFAULT 'all',
   tags TEXT NOT NULL DEFAULT '[]',
   search TEXT NOT NULL DEFAULT '',
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -305,6 +306,13 @@ def _migrate(conn):
         conn.execute('ALTER TABLE todo_items ADD COLUMN due_at TEXT')
     if 'indent' not in todo_cols:
         conn.execute('ALTER TABLE todo_items ADD COLUMN indent INTEGER NOT NULL DEFAULT 0')
+    ss = conn.execute("SELECT name FROM sqlite_master "
+                      "WHERE type='table' AND name='saved_searches'").fetchone()
+    if ss:
+        ss_cols = {r['name'] for r in conn.execute('PRAGMA table_info(saved_searches)')}
+        if 'pinned' not in ss_cols:
+            conn.execute('ALTER TABLE saved_searches ADD COLUMN pinned '
+                         'INTEGER NOT NULL DEFAULT 0')
 
 
 def normalize_tag(name):
@@ -1038,6 +1046,7 @@ def _saved_search_to_dict(row):
         d['tags'] = json.loads(d.get('tags') or '[]')
     except (ValueError, TypeError):
         d['tags'] = []
+    d['pinned'] = bool(d.get('pinned'))
     return d
 
 
@@ -1061,8 +1070,16 @@ def get_saved_search(sid):
 def list_saved_searches(user_id):
     with connect() as conn:
         rows = conn.execute(
-            'SELECT * FROM saved_searches WHERE user_id = ? ORDER BY name', (user_id,)).fetchall()
+            'SELECT * FROM saved_searches WHERE user_id = ? '
+            'ORDER BY pinned DESC, name', (user_id,)).fetchall()
     return [_saved_search_to_dict(r) for r in rows]
+
+
+def set_saved_search_pinned(sid, pinned):
+    with connect() as conn:
+        conn.execute('UPDATE saved_searches SET pinned = ? WHERE id = ?',
+                     (1 if pinned else 0, sid))
+    return get_saved_search(sid)
 
 
 def delete_saved_search(sid):

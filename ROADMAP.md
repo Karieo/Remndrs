@@ -36,9 +36,9 @@ of in chat history. Update it as items land.
 - [ ] Summarize long notes
 - [ ] Smarter voice/email parsing
 
-### Organization (remaining)
-- [ ] Pinned saved-searches sidebar (saved searches already exist as a pill bar;
-      revisit only if the pills aren't enough)
+### Organization
+- [x] Pin saved searches as favorites — pinned ones lead the pill bar (#63)
+      (chosen over a full sidebar, which would duplicate the existing pills)
 
 ## Notes / conventions
 
