@@ -638,11 +638,16 @@ function renderSavedBar(){
   const bar = document.getElementById('savedBar');
   if (!bar) return;
   const pills = savedSearches.map(s =>
-    `<span class="saved-pill" onclick="applySavedSearch('${s.id}')" title="Apply saved search">
-      ${svg('search',11)} ${esc(s.name)}
+    `<span class="saved-pill ${s.pinned?'pinned':''}" onclick="applySavedSearch('${s.id}')" title="Apply saved search">
+      <button class="saved-star ${s.pinned?'on':''}" onclick="event.stopPropagation();togglePinSearch('${s.id}',${s.pinned?'false':'true'})" title="${s.pinned?'Unpin':'Pin to front'}">${s.pinned?'★':'☆'}</button>
+      ${esc(s.name)}
       <button class="saved-del" onclick="event.stopPropagation();deleteSavedSearch('${s.id}')" title="Delete">✕</button>
     </span>`).join('');
   bar.innerHTML = pills + `<button class="saved-save" onclick="saveCurrentSearch()" title="Save current filters">★ Save search</button>`;
+}
+async function togglePinSearch(id, pinned){
+  await api('/api/saved-searches/'+id, { method:'PATCH', body: JSON.stringify({ pinned }) }).catch(()=>{});
+  await loadSavedSearches();
 }
 function currentFilterIsEmpty(){
   return activeChan === 'all' && !activeTags.size && !search && activeFeed === 'private';

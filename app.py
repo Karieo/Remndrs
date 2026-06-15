@@ -833,6 +833,17 @@ def api_create_saved_search():
     return jsonify(saved), 201
 
 
+@app.route('/api/saved-searches/<sid>', methods=['PATCH'])
+def api_update_saved_search(sid):
+    s = db.get_saved_search(sid)
+    if not s or s['user_id'] != session['user_id']:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json(silent=True) or {}
+    if 'pinned' in data:
+        s = db.set_saved_search_pinned(sid, bool(data['pinned']))
+    return jsonify(s)
+
+
 @app.route('/api/saved-searches/<sid>', methods=['DELETE'])
 def api_delete_saved_search(sid):
     s = db.get_saved_search(sid)

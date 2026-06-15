@@ -51,3 +51,32 @@ def test_cannot_delete_others(client, make_user):
     _login(client, 'Owner')
     assert client.delete(f"/api/saved-searches/{s['id']}").status_code == 404
     assert db.get_saved_search(s['id']) is not None
+
+
+# ── Pin to favorite ──────────────────────────────────────────────────────────
+
+def test_pinned_defaults_false_and_sorts_first(make_user):
+    user = make_user('Clay')
+    db.create_saved_search(user['id'], 'Zeta')
+    b = db.create_saved_search(user['id'], 'Alpha')
+    assert b['pinned'] is False
+    db.set_saved_search_pinned(b['id'], True)   # pin Alpha
+    names = [s['name'] for s in db.list_saved_searches(user['id'])]
+    assert names == ['Alpha', 'Zeta']           # pinned first, then by name
+
+
+def test_pin_route_toggles(client, make_user):
+    user = make_user('Clay'); _login(client)
+    s = db.create_saved_search(user['id'], 'Work')
+    resp = client.patch('/api/saved-searches/' + s['id'], json={'pinned': True})
+    assert resp.status_code == 200 and resp.get_json()['pinned'] is True
+    assert db.get_saved_search(s['id'])['pinned'] is True
+    client.patch('/api/saved-searches/' + s['id'], json={'pinned': False})
+    assert db.get_saved_search(s['id'])['pinned'] is False
+
+
+def test_pin_route_404_for_others(client, make_user):
+    other = make_user('Other')
+    s = db.create_saved_search(other['id'], 'Theirs')
+    make_user('Owner'); _login(client, 'Owner')
+    assert client.patch('/api/saved-searches/' + s['id'], json={'pinned': True}).status_code == 404
