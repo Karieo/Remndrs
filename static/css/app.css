@@ -48,7 +48,8 @@ button { font-family:inherit; }
 .feed-btn:not(.active):hover { color:var(--text); }
 .feed-badge { display:inline-flex; align-items:center; justify-content:center; min-width:15px; height:15px; padding:0 4px; margin-left:2px; border-radius:8px; background:var(--accent); color:var(--bg); font-size:9px; font-weight:700; vertical-align:middle; }
 .feed-btn.active .feed-badge { background:var(--bg); color:var(--accent); }
-.icon-btn { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); border-radius:6px; padding:6px 9px; cursor:pointer; display:flex; align-items:center; transition:all .15s; font-family:'IBM Plex Mono',monospace; font-size:10px; }
+.icon-btn { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); border-radius:6px; padding:6px 9px; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; font-family:'IBM Plex Mono',monospace; font-size:10px; position:relative; line-height:1; white-space:nowrap; }
+.icon-btn .feed-badge { position:absolute; top:-6px; right:-6px; margin:0; box-shadow:0 0 0 2px var(--bg); }
 .icon-btn:hover { border-color:var(--border-2); color:var(--text); }
 .icon-btn svg { width:14px; height:14px; }
 
@@ -85,7 +86,7 @@ button { font-family:inherit; }
 
 /* ─── Tag Bar ──────────────────────────────────────────────── */
 .tag-bar { display:flex; align-items:center; gap:6px; padding:12px 24px 14px; flex-wrap:wrap; }
-.tag-bar-action { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; letter-spacing:0.3px; padding:3px 9px; cursor:pointer; transition:all .15s; }
+.tag-bar-action { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; letter-spacing:0.3px; padding:3px 9px; cursor:pointer; transition:all .15s; white-space:nowrap; }
 .tag-bar-action:hover { border-color:var(--border-2); color:var(--text-mid); }
 .tag-divider { width:1px; height:16px; background:var(--border); margin:0 2px; }
 .tag-pill {
@@ -176,7 +177,7 @@ button { font-family:inherit; }
 .saved-del:hover { color:#f87171; }
 .saved-save { background:none; border:1px dashed var(--border-2); color:var(--text-muted);
   border-radius:20px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
-  letter-spacing:0.3px; padding:4px 10px; cursor:pointer; transition:all .15s; }
+  letter-spacing:0.3px; padding:4px 10px; cursor:pointer; transition:all .15s; white-space:nowrap; }
 .saved-save:hover { color:var(--accent); border-color:var(--accent); }
 
 /* ─── Cards Grid ───────────────────────────────────────────── */
@@ -393,6 +394,7 @@ button { font-family:inherit; }
   padding:18px 0; text-align:center; }
 .rem-digest { padding-top:12px; margin-bottom:12px; border-top:1px solid var(--border); }
 .rem-digest-label { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); }
+.rem-digest-label svg { width:14px; height:14px; color:var(--accent); flex-shrink:0; }
 .rem-digest-label select { background:var(--surface-2); border:1px solid var(--border); border-radius:6px;
   color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:4px 8px; outline:none; }
 .rem-digest-hint { display:block; margin-top:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
