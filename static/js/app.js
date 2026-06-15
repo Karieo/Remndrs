@@ -548,10 +548,15 @@ function visibleEvents() {
 
 function renderCards() {
   const grid = document.getElementById('grid');
+  // Calendar view lists events soonest-first (chronological); everywhere else
+  // is newest-first (notes feed). Pinned notes always lead.
+  const cal = activeChan === 'cal';
+  const byDate = (a,b) => cal ? String(a.at).localeCompare(String(b.at))
+                              : String(b.at).localeCompare(String(a.at));
   const items = [
     ...visibleNotes().map(n => ({ pinned: n.pinned, at: n.created_at, html: () => cardHTML(n) })),
     ...visibleEvents().map(ev => ({ pinned: false, at: ev.start_at, html: () => eventCardHTML(ev) })),
-  ].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || String(b.at).localeCompare(String(a.at)));
+  ].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || byDate(a,b));
   grid.innerHTML = items.length ? items.map(i => i.html()).join('')
     : `<div class="grid-empty">No ${activeFeed==='archived'?'archived ':activeFeed==='shared'?'shared ':''}notes match.</div>`;
   renderChanRail();   // notes/events just changed — a channel may now (dis)appear
