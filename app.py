@@ -121,12 +121,31 @@ log.info('Remndrs %s starting', VERSION_LABEL)
 mcp_server.SERVER_VERSION = VERSION
 
 
+def _asset_version():
+    """Cache-bust token for static JS/CSS that changes whenever their *contents*
+    change — works even in a container with no .git (where _GIT_SHA is None, so
+    the old git-sha approach fell back to a constant and never busted the cache).
+    Hashed once at startup."""
+    import hashlib
+    h = hashlib.md5()
+    for rel in ('static/js/app.js', 'static/css/app.css'):
+        try:
+            with open(os.path.join(_APP_DIR, rel), 'rb') as fh:
+                h.update(fh.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:12]
+
+
+_ASSET_VERSION = _asset_version()
+
+
 @app.context_processor
 def inject_version():
-    # asset_version busts the browser/CDN cache for static JS/CSS on every
-    # deploy, so a fix can never be hidden behind a stale cached app.js. Uses
-    # the git short SHA (falls back to the version string).
-    return {'app_version': VERSION_LABEL, 'asset_version': _GIT_SHA or VERSION}
+    # app_version: human build stamp (shown in the UI). asset_version: cache-bust
+    # query param on /static/js/app.js + app.css so a deploy's fix always reaches
+    # the browser instead of hiding behind a cached copy.
+    return {'app_version': VERSION_LABEL, 'asset_version': _ASSET_VERSION}
 
 
 # ── Bootstrap ────────────────────────────────────────────
