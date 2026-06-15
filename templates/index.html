@@ -192,8 +192,8 @@
       <button type="button" class="sx" onclick="saveAsTemplate()">＋ Save as template</button>
       <button type="button" class="sx" id="tplManageBtn" onclick="openTemplates()" hidden>Manage</button>
     </div>
-    <textarea class="composer-textarea" id="composerText" oninput="updateComposerTags()"></textarea>
-    <div class="wiki-ac" id="wikiAC" hidden></div>
+    <textarea class="composer-textarea" id="composerText" oninput="onComposerInput()"></textarea>
+    <div class="wiki-ac" id="composerAC" hidden></div>
     <div class="composer-tagrow" id="composerTags"></div>
     <div class="composer-tagsuggest" id="composerSuggest"></div>
     <div class="composer-airow">
