@@ -450,6 +450,7 @@ function dropdownHTML(n) {
     <div class="dd-item" style="--c:#60a5fa" onclick="openShare('${n.id}')"><span class="di">${svg('reply')}</span> Share with…</div>
     <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
+    ${n.type !== 'todo' ? `<div class="dd-item" onclick="summarizeNote('${n.id}')"><span class="di" style="--c:var(--accent)">${svg('spark')}</span> Summarize</div>` : ''}
     ${n.attachments && n.attachments.length ? `<div class="dd-item" onclick="openAttachments('${n.id}')"><span class="di">${svg('clip')}</span> Manage files (${n.attachments.length})</div>` : ''}
     <div class="dd-label">Color</div>
     <div class="dd-colors">
@@ -778,6 +779,23 @@ async function confirmSend(){
 }
 
 /* ─── Card quick actions ───────────────────────────────────── */
+// ✨ Summarize: prepend an AI TL;DR blockquote to the note (replacing any prior one).
+async function summarizeNote(id){
+  closeAllMenus();
+  const n = notes.find(x=>x.id===id);
+  if (!n) return;
+  toast('✨ Summarizing…');
+  const res = await api('/api/ai/summarize', { method:'POST',
+    body: JSON.stringify({ content: n.content }) }).catch(() => null);
+  if (!res){ toast('Could not reach AI'); return; }
+  if (!res.configured){ toast('Add an OpenAI key in ⚙ Settings → Voice transcription to enable AI'); return; }
+  if (!res.summary){ toast('No summary returned'); return; }
+  const body = n.content.replace(/^>\s*\*\*TL;DR:\*\*.*\n+/, '');   // drop any existing TL;DR
+  const content = `> **TL;DR:** ${res.summary}\n\n${body}`;
+  await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ content }) }).catch(e=>toast(esc(e.message)));
+  toast(`${svg('spark',13)} Summary added`);
+  loadNotes();
+}
 async function copyNote(id){
   closeAllMenus();
   const n = notes.find(x=>x.id===id);

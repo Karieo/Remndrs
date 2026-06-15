@@ -236,7 +236,8 @@ Every card's `···` menu can push the note back out:
 - **Add to Calendar** — pick an iCloud calendar and time; the note becomes a
   real calendar event (first line = title, full text = description).
 
-Plus quick actions: **Copy text**, **Pin to top**, **Hide contents**,
+Plus quick actions: **Copy text**, **✨ Summarize** (adds an AI TL;DR to the
+top of a long note — needs an OpenAI key), **Pin to top**, **Hide contents**,
 **Color** (a custom card accent, overriding the tag color), **Move to
 Shared/Mine**, **Delete**.
 

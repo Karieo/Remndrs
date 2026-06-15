@@ -33,7 +33,7 @@ of in chat history. Update it as items land.
 
 ### Capture & AI
 - [x] AI tag suggestions in the composer (OpenAI, self-disabling) (#62)
-- [ ] Summarize long notes
+- [x] Summarize long notes — ✨ adds a TL;DR blockquote (#64)
 - [ ] Smarter voice/email parsing
 
 ### Organization

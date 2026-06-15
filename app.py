@@ -860,6 +860,13 @@ def api_suggest_tags():
     return jsonify({'configured': ai.configured(), 'tags': tags})
 
 
+@app.route('/api/ai/summarize', methods=['POST'])
+def api_summarize():
+    data = request.get_json(silent=True) or {}
+    return jsonify({'configured': ai.configured(),
+                    'summary': ai.summarize(data.get('content', ''))})
+
+
 @app.route('/api/tags')
 def api_list_tags():
     return jsonify(db.list_tags())
