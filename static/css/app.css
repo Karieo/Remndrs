@@ -124,6 +124,15 @@ button { font-family:inherit; }
 }
 .card-body a[href^="#wiki="]:hover { background:color-mix(in srgb,var(--accent) 15%,transparent); }
 
+/* ─── Backlinks ────────────────────────────────────────────── */
+.backlinks { margin-top:11px; padding-top:9px; border-top:1px solid var(--border);
+  font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted);
+  display:flex; align-items:center; flex-wrap:wrap; gap:4px 7px; }
+.backlinks svg { width:11px; height:11px; opacity:.7; }
+.backlink { color:var(--accent); cursor:pointer; text-decoration:none; border-bottom:1px dashed transparent; }
+.backlink:hover { border-bottom-color:var(--accent); }
+.card.flash { outline:2px solid var(--accent); outline-offset:1px; transition:outline-color .3s; }
+
 /* ─── Bulk select ──────────────────────────────────────────── */
 .btn-select { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted);
   border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
