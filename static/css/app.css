@@ -192,8 +192,12 @@ button { font-family:inherit; }
 /* While its menu is open the card sits above its neighbours so the dropdown
    isn't painted under the next card down in the masonry column. transform:none
    keeps a hover lift from becoming the containing block for the now-fixed
-   dropdown (which would re-anchor it to the card and clip it). */
-.card.menu-open { z-index:40; transform:none; }
+   dropdown (which would re-anchor it to the card and clip it). The transition
+   override drops `transform` from .card's transition so transform:none takes
+   effect INSTANTLY: otherwise it animates from the hover lift over .1s, and
+   during that animation the card still has a transform — so the fixed menu
+   anchors to the card and pops up in the wrong place until the lift settles. */
+.card.menu-open { z-index:40; transform:none; transition:box-shadow .15s,border-color .15s; }
 .card.editable { cursor:pointer; }
 .card.pinned { background:var(--pinned-bg); border-left-color:var(--pinned-border); }
 
