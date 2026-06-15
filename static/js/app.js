@@ -1324,9 +1324,14 @@ function openComposer(){
   composerAttachments = [];
   renderComposerFiles();
   renderTemplatePick();
+  resetAISuggest();
   document.getElementById('composer').classList.add('open');
   updateComposerTags();
   setTimeout(()=>document.getElementById('composerText').focus(),50);
+}
+function resetAISuggest(){
+  const out = document.getElementById('aiSuggest'); if (out) out.innerHTML = '';
+  const btn = document.getElementById('aiSuggestBtn'); if (btn) btn.hidden = false;
 }
 
 /* ─── Note templates ───────────────────────────────────────── */
@@ -1442,6 +1447,7 @@ function editNote(id){
   document.getElementById('composerText').value = text;
   composerAttachments = [];
   renderComposerFiles();
+  resetAISuggest();
   document.getElementById('composer').classList.add('open');
   updateComposerTags();
   setTimeout(()=>document.getElementById('composerText').focus(),50);
@@ -1560,6 +1566,30 @@ function renderTagSuggestions(found){
     : '';
 }
 
+// AI tag suggestions: ask the server (OpenAI) for tags based on the draft.
+async function suggestTags(){
+  const ta = document.getElementById('composerText');
+  const content = ta.value.trim();
+  if (!content){ toast('Write something first'); return; }
+  const { tags:existing } = extractTags(ta.value);
+  const btn = document.getElementById('aiSuggestBtn');
+  btn.disabled = true; btn.textContent = '✨ Thinking…';
+  const res = await api('/api/ai/suggest-tags', { method:'POST',
+    body: JSON.stringify({ content, existing }) }).catch(() => null);
+  btn.disabled = false; btn.textContent = '✨ Suggest tags';
+  const out = document.getElementById('aiSuggest');
+  if (!res){ toast('Could not reach AI'); return; }
+  if (!res.configured){
+    toast('Add an OpenAI key in ⚙ Settings → Voice transcription to enable AI tags');
+    btn.hidden = true; return;
+  }
+  if (!res.tags.length){ out.innerHTML = `<span class="ct-label">no suggestions</span>`; return; }
+  out.innerHTML = res.tags.map((t,i) => {
+    const ex = tags.find(x => x.name === t);
+    const color = ex ? ex.color : PALETTE[(tags.length+i) % PALETTE.length];
+    return `<button type="button" class="ct-suggest" style="--tag-color:${color}" onclick="addComposerTag('${esc(t)}')">+ ${esc(t)}</button>`;
+  }).join('');
+}
 function addComposerTag(name){
   const ta = document.getElementById('composerText');
   const { tags:cur } = extractTags(ta.value);

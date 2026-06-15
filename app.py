@@ -58,6 +58,7 @@ import telegram
 import mcp_server
 import voice
 import webpush
+import ai
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -839,6 +840,13 @@ def api_delete_saved_search(sid):
         return jsonify({'error': 'Not found'}), 404
     db.delete_saved_search(sid)
     return jsonify({'success': True})
+
+
+@app.route('/api/ai/suggest-tags', methods=['POST'])
+def api_suggest_tags():
+    data = request.get_json(silent=True) or {}
+    tags = ai.suggest_tags(data.get('content', ''), data.get('existing') or [])
+    return jsonify({'configured': ai.configured(), 'tags': tags})
 
 
 @app.route('/api/tags')

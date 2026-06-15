@@ -196,6 +196,10 @@
     <div class="wiki-ac" id="wikiAC" hidden></div>
     <div class="composer-tagrow" id="composerTags"></div>
     <div class="composer-tagsuggest" id="composerSuggest"></div>
+    <div class="composer-airow">
+      <button type="button" class="ai-suggest" id="aiSuggestBtn" onclick="suggestTags()">✨ Suggest tags</button>
+      <span class="composer-aisuggest" id="aiSuggest"></span>
+    </div>
     <div class="composer-remind">
       <label><input type="checkbox" id="remindOn" onchange="document.getElementById('remindAt').hidden=!this.checked; document.getElementById('remindRepeat').hidden=!this.checked"> ⏰ remind me</label>
       <input type="datetime-local" id="remindAt" hidden>
