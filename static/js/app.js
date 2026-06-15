@@ -1469,6 +1469,67 @@ function updateComposerTags(){
   renderTagSuggestions(found);
 }
 
+/* ─── [[wikilink]] autocomplete ────────────────────────────── */
+let wikiAC = { open: false, start: 0, items: [], idx: 0 };
+// While typing inside an unclosed [[ … , suggest existing note titles.
+function updateWikiAutocomplete(){
+  const ta = document.getElementById('composerText');
+  if (!ta) return;
+  const before = ta.value.slice(0, ta.selectionStart);
+  const m = before.match(/\[\[([^\[\]\n]*)$/);
+  if (!m){ closeWikiAC(); return; }
+  const q = m[1].trim().toLowerCase();
+  const seen = new Set(), items = [];
+  for (const n of notes){
+    if (editingNoteId && n.id === editingNoteId) continue;   // don't link a note to itself
+    const title = (n.content.split('\n')[0] || '').trim();
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key) || (q && !key.includes(q))) continue;
+    seen.add(key); items.push(title);
+    if (items.length >= 8) break;
+  }
+  if (!items.length){ closeWikiAC(); return; }
+  wikiAC = { open: true, start: ta.selectionStart - m[1].length, items, idx: 0 };
+  renderWikiAC();
+}
+function renderWikiAC(){
+  const box = document.getElementById('wikiAC');
+  if (!box) return;
+  box.hidden = false;
+  box.innerHTML = wikiAC.items.map((t,i) =>
+    `<button type="button" class="wiki-ac-item ${i===wikiAC.idx?'active':''}" onmousedown="event.preventDefault();pickWikiAC(${i})">${svg('reply',11)} ${esc(t)}</button>`).join('');
+}
+function closeWikiAC(){
+  wikiAC.open = false;
+  const box = document.getElementById('wikiAC');
+  if (box){ box.hidden = true; box.innerHTML = ''; }
+}
+function pickWikiAC(i){
+  const ta = document.getElementById('composerText');
+  const title = wikiAC.items[i];
+  if (!ta || title == null) return;
+  const before = ta.value.slice(0, wikiAC.start);   // includes the "[["
+  const after = ta.value.slice(ta.selectionStart);
+  const insert = title + ']]';
+  ta.value = before + insert + after;
+  const caret = before.length + insert.length;
+  closeWikiAC();
+  ta.focus();
+  ta.setSelectionRange(caret, caret);
+  updateComposerTags();
+}
+// Keyboard nav while the dropdown is open; returns true if it handled the key.
+function wikiACKeydown(e){
+  if (!wikiAC.open) return false;
+  const n = wikiAC.items.length;
+  if (e.key === 'ArrowDown'){ wikiAC.idx = (wikiAC.idx + 1) % n; renderWikiAC(); return true; }
+  if (e.key === 'ArrowUp'){ wikiAC.idx = (wikiAC.idx - 1 + n) % n; renderWikiAC(); return true; }
+  if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey){ pickWikiAC(wikiAC.idx); return true; }
+  if (e.key === 'Escape'){ closeWikiAC(); return true; }
+  return false;
+}
+
 /* One-tap reuse of existing tags so you don't retype them (or fork a near-dup). */
 function renderTagSuggestions(found){
   const el = document.getElementById('composerSuggest');
@@ -1604,6 +1665,10 @@ document.getElementById('composerText').addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])];
   if (files.length){ e.preventDefault(); addComposerFiles(files); }
 });
+// [[wikilink]] autocomplete: intercept nav keys before the global shortcuts.
+document.getElementById('composerText').addEventListener('keydown', (e) => {
+  if (wikiACKeydown(e)){ e.preventDefault(); e.stopPropagation(); }
+}, true);
 renderChanRail();
 setThemeIcon();
 loadChannelStatus();
