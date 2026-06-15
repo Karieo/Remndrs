@@ -316,7 +316,7 @@ button { font-family:inherit; }
 .dd-sep { height:1px; background:var(--border); margin:4px 6px; }
 
 /* ─── Sheets (send / settings / tags) ──────────────────────── */
-.overlay { position:fixed; top:0; left:0; width:100vw; height:100vh; height:100dvh; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:90px 20px 20px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+.overlay { position:fixed; inset:0; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:90px 20px 20px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
 .overlay.open { display:flex; }
 @media (max-width:540px){ .overlay{ padding-top:24px; } }
 .sheet { background:var(--surface); border:1px solid var(--border-2); border-radius:12px; padding:18px; width:100%; max-width:380px; box-shadow:0 24px 70px rgba(0,0,0,0.5); animation:sheetIn .18s ease; }
@@ -423,7 +423,7 @@ button { font-family:inherit; }
 .reminder-banner .rb-actions { display:flex; gap:6px; margin-left:auto; flex-shrink:0; }
 
 /* ─── Composer ─────────────────────────────────────────────── */
-.composer-overlay { position:fixed; top:0; left:0; width:100vw; height:100vh; height:100dvh; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:80px 20px 20px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+.composer-overlay { position:fixed; inset:0; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:80px 20px 20px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
 .composer-overlay.open { display:flex; }
 @media (max-width:540px){ .composer-overlay{ padding-top:24px; } }
 .composer { background:var(--surface); border:1px solid var(--border-2); border-radius:10px; width:100%; max-width:620px; box-shadow:0 20px 60px rgba(0,0,0,0.5); overflow:hidden; animation:sheetIn .18s ease; }
