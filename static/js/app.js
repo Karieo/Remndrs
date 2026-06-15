@@ -25,6 +25,7 @@ const I = {
   clip:'<path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
   search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
+  tag:'<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.2"/>',
   eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff:'<path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18 18 0 0 1-2.2 3.2M6.6 6.6A18 18 0 0 0 2 12s3.5 7 10 7a10.9 10.9 0 0 0 4-.7"/><path d="M3 3l18 18"/>',
 };
@@ -1496,16 +1497,14 @@ function updateComposerTags(){
   renderTagSuggestions(found);
 }
 
-/* ─── [[wikilink]] autocomplete ────────────────────────────── */
-let wikiAC = { open: false, start: 0, items: [], idx: 0 };
-// While typing inside an unclosed [[ … , suggest existing note titles.
-function updateWikiAutocomplete(){
-  const ta = document.getElementById('composerText');
-  if (!ta) return;
-  const before = ta.value.slice(0, ta.selectionStart);
-  const m = before.match(/\[\[([^\[\]\n]*)$/);
-  if (!m){ closeWikiAC(); return; }
-  const q = m[1].trim().toLowerCase();
+/* ─── Composer autocomplete: [[note titles]] and #tags ─────── */
+// One dropdown serves both triggers. `kind` is 'wiki' (typing inside an open
+// [[ … ) or 'tag' (typing a #partial). `start` is the caret offset right after
+// the trigger ("[[" or "#"), so picking replaces just the partial.
+let composerAC = { open: false, kind: null, start: 0, items: [], idx: 0 };
+
+// Existing note titles matching the [[ query (excludes the note being edited).
+function acNoteTitles(q){
   const seen = new Set(), items = [];
   for (const n of notes){
     if (editingNoteId && n.id === editingNoteId) continue;   // don't link a note to itself
@@ -1516,45 +1515,80 @@ function updateWikiAutocomplete(){
     seen.add(key); items.push(title);
     if (items.length >= 8) break;
   }
-  if (!items.length){ closeWikiAC(); return; }
-  wikiAC = { open: true, start: ta.selectionStart - m[1].length, items, idx: 0 };
-  renderWikiAC();
+  return items;
 }
-function renderWikiAC(){
-  const box = document.getElementById('wikiAC');
+
+// Existing global tags matching a #partial (q already upper-cased, no leading #).
+function acTagNames(q){
+  return tags
+    .filter(t => t.name.includes(q) && t.name !== q)   // hide the exact one you've already typed
+    .sort((a,b) => (b.count||0) - (a.count||0))
+    .slice(0, 8)
+    .map(t => t.name);
+}
+
+// Called on every keystroke: decide whether a [[ or # autocomplete applies.
+function updateComposerAutocomplete(){
+  const ta = document.getElementById('composerText');
+  if (!ta){ closeComposerAC(); return; }
+  const before = ta.value.slice(0, ta.selectionStart);
+  const wm = before.match(/\[\[([^\[\]\n]*)$/);            // inside an unclosed [[
+  if (wm){
+    const items = acNoteTitles(wm[1].trim().toLowerCase());
+    if (items.length){ openComposerAC('wiki', ta.selectionStart - wm[1].length, items); return; }
+  }
+  const tm = before.match(/(?:^|\s)#([A-Za-z0-9_-]*)$/);   // a #partial at the caret
+  if (tm){
+    const items = acTagNames(tm[1].toUpperCase());
+    if (items.length){ openComposerAC('tag', ta.selectionStart - tm[1].length, items); return; }
+  }
+  closeComposerAC();
+}
+function openComposerAC(kind, start, items){
+  composerAC = { open: true, kind, start, items, idx: 0 };
+  renderComposerAC();
+}
+function renderComposerAC(){
+  const box = document.getElementById('composerAC');
   if (!box) return;
   box.hidden = false;
-  box.innerHTML = wikiAC.items.map((t,i) =>
-    `<button type="button" class="wiki-ac-item ${i===wikiAC.idx?'active':''}" onmousedown="event.preventDefault();pickWikiAC(${i})">${svg('reply',11)} ${esc(t)}</button>`).join('');
+  const icon = composerAC.kind === 'tag' ? 'tag' : 'reply';
+  box.innerHTML = composerAC.items.map((t,i) =>
+    `<button type="button" class="wiki-ac-item ${i===composerAC.idx?'active':''}" onmousedown="event.preventDefault();pickComposerAC(${i})">${svg(icon,11)} ${esc(composerAC.kind==='tag'?'#'+t:t)}</button>`).join('');
 }
-function closeWikiAC(){
-  wikiAC.open = false;
-  const box = document.getElementById('wikiAC');
+function closeComposerAC(){
+  composerAC.open = false;
+  const box = document.getElementById('composerAC');
   if (box){ box.hidden = true; box.innerHTML = ''; }
 }
-function pickWikiAC(i){
+function pickComposerAC(i){
   const ta = document.getElementById('composerText');
-  const title = wikiAC.items[i];
-  if (!ta || title == null) return;
-  const before = ta.value.slice(0, wikiAC.start);   // includes the "[["
+  const val = composerAC.items[i];
+  if (!ta || val == null) return;
+  const before = ta.value.slice(0, composerAC.start);   // includes the "[[" or "#"
   const after = ta.value.slice(ta.selectionStart);
-  const insert = title + ']]';
+  const insert = composerAC.kind === 'tag' ? val + ' ' : val + ']]';
   ta.value = before + insert + after;
   const caret = before.length + insert.length;
-  closeWikiAC();
+  closeComposerAC();
   ta.focus();
   ta.setSelectionRange(caret, caret);
   updateComposerTags();
 }
 // Keyboard nav while the dropdown is open; returns true if it handled the key.
-function wikiACKeydown(e){
-  if (!wikiAC.open) return false;
-  const n = wikiAC.items.length;
-  if (e.key === 'ArrowDown'){ wikiAC.idx = (wikiAC.idx + 1) % n; renderWikiAC(); return true; }
-  if (e.key === 'ArrowUp'){ wikiAC.idx = (wikiAC.idx - 1 + n) % n; renderWikiAC(); return true; }
-  if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey){ pickWikiAC(wikiAC.idx); return true; }
-  if (e.key === 'Escape'){ closeWikiAC(); return true; }
+function composerACKeydown(e){
+  if (!composerAC.open) return false;
+  const n = composerAC.items.length;
+  if (e.key === 'ArrowDown'){ composerAC.idx = (composerAC.idx + 1) % n; renderComposerAC(); return true; }
+  if (e.key === 'ArrowUp'){ composerAC.idx = (composerAC.idx - 1 + n) % n; renderComposerAC(); return true; }
+  if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey){ pickComposerAC(composerAC.idx); return true; }
+  if (e.key === 'Escape'){ closeComposerAC(); return true; }
   return false;
+}
+// Run on every composer keystroke: tag preview + the [[/# autocomplete.
+function onComposerInput(){
+  updateComposerTags();
+  updateComposerAutocomplete();
 }
 
 /* One-tap reuse of existing tags so you don't retype them (or fork a near-dup). */
@@ -1716,9 +1750,9 @@ document.getElementById('composerText').addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])];
   if (files.length){ e.preventDefault(); addComposerFiles(files); }
 });
-// [[wikilink]] autocomplete: intercept nav keys before the global shortcuts.
+// Composer autocomplete ([[ / #): intercept nav keys before the global shortcuts.
 document.getElementById('composerText').addEventListener('keydown', (e) => {
-  if (wikiACKeydown(e)){ e.preventDefault(); e.stopPropagation(); }
+  if (composerACKeydown(e)){ e.preventDefault(); e.stopPropagation(); }
 }, true);
 renderChanRail();
 setThemeIcon();
