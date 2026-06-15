@@ -29,7 +29,7 @@ of in chat history. Update it as items land.
 - [x] Advanced search operators — `tag:`, `is:todo|note|pinned|hidden`,
       `has:attachment|reminder|due`, `due:today|overdue|week` (#60)
 - [ ] Pinned saved-searches sidebar
-- [ ] Per-note colors
+- [x] Per-note colors (#61)
 
 ### Capture & AI (not started)
 - Auto-tag / summarize notes via Claude

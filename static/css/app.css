@@ -346,6 +346,14 @@ button { font-family:inherit; }
 .dd-item .di { color:var(--c,var(--text-muted)); display:flex; }
 .dd-item .di svg { width:13px; height:13px; }
 .dd-sep { height:1px; background:var(--border); margin:4px 6px; }
+.dd-colors { display:flex; flex-wrap:wrap; gap:6px; padding:2px 8px 6px; }
+.dd-color { width:18px; height:18px; border-radius:50%; cursor:pointer; border:2px solid transparent;
+  background:var(--c); padding:0; transition:transform .1s; display:flex; align-items:center; justify-content:center; }
+.dd-color:hover { transform:scale(1.15); }
+.dd-color.active { border-color:var(--text); }
+.dd-color-clear { background:var(--surface-3); color:var(--text); }
+.dd-color-clear svg { width:11px; height:11px; opacity:0; }
+.dd-color-clear.active svg { opacity:1; }
 
 /* ─── Sheets (send / settings / tags) ──────────────────────── */
 .overlay { position:fixed; inset:0; background:var(--overlay); z-index:200; display:none; align-items:flex-start; justify-content:center; padding:90px 20px 20px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }

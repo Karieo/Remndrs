@@ -10,7 +10,12 @@ struct NoteCardView: View {
     var onShareWith: (() -> Void)?
     var onArchive: (() -> Void)?
     var onToggleHide: (() -> Void)?
+    var onSetColor: ((String?) -> Void)?
     var onDelete: (() -> Void)?
+
+    /// Note accent palette — mirrors PALETTE in static/js/app.js.
+    static let palette = ["#4ade80", "#f87171", "#60a5fa", "#fb923c",
+                          "#a78bfa", "#facc15", "#f472b6", "#2dd4bf", "#e5e7eb"]
     var onToggleTodo: ((TodoItem) -> Void)?
     var onReply: ((String) -> Void)?
 
@@ -23,6 +28,7 @@ struct NoteCardView: View {
     private var isOutgoing: Bool { senderID == myUserID }
 
     private var accentColor: Color {
+        if let c = note.color, !c.isEmpty { return Color(hexString: c) }
         if note.pinned { return Theme.accent }
         if let first = note.tags.first { return Color(hexString: first.color) }
         return Theme.border
@@ -106,6 +112,18 @@ struct NoteCardView: View {
                 Button { onToggleHide() } label: {
                     Label(note.isHidden ? "Unhide" : "Hide contents",
                           systemImage: note.isHidden ? "eye" : "eye.slash")
+                }
+            }
+            if let onSetColor {
+                Menu {
+                    Button { onSetColor(nil) } label: { Label("Default", systemImage: "slash.circle") }
+                    ForEach(Self.palette, id: \.self) { hex in
+                        Button { onSetColor(hex) } label: {
+                            Label(hex, systemImage: note.color == hex ? "checkmark.circle.fill" : "circle.fill")
+                        }
+                    }
+                } label: {
+                    Label("Color", systemImage: "paintpalette")
                 }
             }
             if let onArchive {

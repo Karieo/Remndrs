@@ -235,7 +235,8 @@ Every card's `···` menu can push the note back out:
   real calendar event (first line = title, full text = description).
 
 Plus quick actions: **Copy text**, **Pin to top**, **Hide contents**,
-**Move to Shared/Mine**, **Delete**.
+**Color** (a custom card accent, overriding the tag color), **Move to
+Shared/Mine**, **Delete**.
 
 Long notes **collapse with a "Show more" link** so the feed stays tidy.
 **Hide contents** (in the `···` menu) keeps a note in the feed but shows only

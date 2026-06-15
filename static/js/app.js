@@ -183,7 +183,7 @@ function toggleTag(name){ activeTags.has(name)?activeTags.delete(name):activeTag
 
 /* ─── Render: cards ────────────────────────────────────────── */
 function tagColor(name) { return (tags.find(t => t.name === name) || {}).color || CH.app.c; }
-function accentOf(n) { return n.pinned ? null : (n.tags[0] ? n.tags[0].color : CH.app.c); }
+function accentOf(n) { return n.color || (n.pinned ? null : (n.tags[0] ? n.tags[0].color : CH.app.c)); }
 
 function todoDueBadge(t){
   if (!t.due_at) return '';
@@ -451,6 +451,12 @@ function dropdownHTML(n) {
     <div class="dd-item" onclick="moveFeed('${n.id}')"><span class="di">${svg('dirOut')}</span> ${moveLabel}</div>
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
     ${n.attachments && n.attachments.length ? `<div class="dd-item" onclick="openAttachments('${n.id}')"><span class="di">${svg('clip')}</span> Manage files (${n.attachments.length})</div>` : ''}
+    <div class="dd-label">Color</div>
+    <div class="dd-colors">
+      <button class="dd-color dd-color-clear ${!n.color?'active':''}" title="Default" onclick="setNoteColor('${n.id}', null)">${svg('check',11)}</button>
+      ${PALETTE.map(c=>`<button class="dd-color ${n.color===c?'active':''}" style="--c:${c}" title="${c}" onclick="setNoteColor('${n.id}','${c}')"></button>`).join('')}
+    </div>
+    <div class="dd-sep"></div>
     <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
     <div class="dd-item" onclick="toggleHide('${n.id}')"><span class="di">${svg(n.hidden?'eye':'eyeOff')}</span> ${n.hidden?'Unhide':'Hide contents'}</div>
     <div class="dd-item" onclick="archiveNote('${n.id}', ${n.archived?'false':'true'})"><span class="di">${svg('archive')}</span> ${n.archived?'Restore':'Archive'}</div>
@@ -780,6 +786,11 @@ async function copyNote(id){
   }
   if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
   toast(`${svg('copy',13)} Copied to clipboard`);
+}
+async function setNoteColor(id, color){
+  closeAllMenus();
+  await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ color }) }).catch(()=>{});
+  loadNotes();
 }
 async function togglePin(id){
   closeAllMenus();
