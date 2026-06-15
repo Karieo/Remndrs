@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS notes (
   pinned INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   hidden INTEGER NOT NULL DEFAULT 0,
+  color TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   filename TEXT,
@@ -287,6 +288,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
     if 'hidden' not in note_cols:
         conn.execute('ALTER TABLE notes ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
+    if 'color' not in note_cols:
+        conn.execute('ALTER TABLE notes ADD COLUMN color TEXT')
     if 'digest_hour' not in cols:
         conn.execute('ALTER TABLE users ADD COLUMN digest_hour INTEGER')
     if 'digest_last_sent' not in cols:
@@ -587,7 +590,7 @@ def get_note(note_id):
 
 
 def update_note(note_id, **fields):
-    allowed = {'content', 'feed', 'type', 'pinned', 'archived', 'hidden', 'filename', 'source'}
+    allowed = {'content', 'feed', 'type', 'pinned', 'archived', 'hidden', 'color', 'filename', 'source'}
     bool_cols = {'pinned', 'archived', 'hidden'}
     sets, params = [], []
     for key, value in fields.items():

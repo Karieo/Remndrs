@@ -206,6 +206,7 @@ struct FeedView: View {
                             onShareWith: { shareTarget = note },
                             onArchive: { Task { await setArchived(note, !note.isArchived) } },
                             onToggleHide: { Task { await setHidden(note, !note.isHidden) } },
+                            onSetColor: { hex in Task { await setColor(note, hex) } },
                             onDelete: { Task { await delete(note) } },
                             onToggleTodo: { todo in Task { await toggle(todo, in: note) } },
                             onReply: model.feed == "shared"
@@ -239,6 +240,13 @@ struct FeedView: View {
     private func setHidden(_ note: Note, _ hidden: Bool) async {
         _ = try? await session.api?.updateNote(id: note.id,
                                                fields: ["hidden": hidden])
+        await model.load(api: session.api)
+    }
+
+    private func setColor(_ note: Note, _ hex: String?) async {
+        // NSNull clears the column server-side (JSON null).
+        _ = try? await session.api?.updateNote(id: note.id,
+                                               fields: ["color": hex ?? NSNull()])
         await model.load(api: session.api)
     }
 

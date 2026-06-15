@@ -14,6 +14,8 @@ struct Note: Codable, Identifiable, Hashable {
     // When true, the card shows only title/date/tags until revealed. Optional
     // so older servers (no `hidden` field) still decode.
     var hidden: Bool?
+    // Custom accent color (hex like "#60a5fa"); overrides the tag accent. Optional.
+    var color: String?
     let createdAt: String
     let updatedAt: String
     var tags: [TagRef]
@@ -23,7 +25,7 @@ struct Note: Codable, Identifiable, Hashable {
     var replies: [Reply]
 
     enum CodingKeys: String, CodingKey {
-        case id, feed, type, content, source, pinned, archived, hidden, tags, todos, attachments
+        case id, feed, type, content, source, pinned, archived, hidden, color, tags, todos, attachments
         case share, replies
         case userId = "user_id"
         case userName = "user_name"

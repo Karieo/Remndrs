@@ -73,6 +73,7 @@ def _frontmatter(note, user_name):
     tags = note.get('tags', [])
     tag_names = ', '.join(t['name'] for t in tags)
     tag_colors = ', '.join(f'{t["name"]}: "{t["color"]}"' for t in tags)
+    color_line = f'color: "{note["color"]}"\n' if note.get('color') else ''
     return (
         '---\n'
         f'id: {note["id"]}\n'
@@ -84,6 +85,7 @@ def _frontmatter(note, user_name):
         f'pinned: {"true" if note["pinned"] else "false"}\n'
         f'archived: {"true" if note.get("archived") else "false"}\n'
         f'hidden: {"true" if note.get("hidden") else "false"}\n'
+        f'{color_line}'
         f'created: {note["created_at"]}\n'
         f'updated: {note["updated_at"]}\n'
         '---\n'
