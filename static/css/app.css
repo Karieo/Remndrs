@@ -123,6 +123,9 @@ button { font-family:inherit; }
 .bulk-bar { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:120;
   display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px;
   background:var(--surface); border:1px solid var(--border-2); box-shadow:var(--shadow-hover); }
+/* A class `display` rule overrides the browser's [hidden]{display:none}; restore
+   it so toggling the `hidden` attribute actually hides the bar. */
+.bulk-bar[hidden] { display:none; }
 .bulk-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-mid); padding:0 4px; }
 .bulk-bar .sx.danger { color:#f87171; }
 .bulk-bar .sx:disabled { opacity:.4; cursor:default; }
@@ -350,6 +353,7 @@ button { font-family:inherit; }
 .rem-digest-hint { display:block; margin-top:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
 .rem-push { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   padding-top:12px; margin-bottom:12px; border-top:1px solid var(--border); }
+.rem-push[hidden] { display:none; }
 .rem-push-hint { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); }
 .build-stamp { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.4px; text-align:center; user-select:all; }
 /* In the settings footer the auto margin pushes the stamp left of the Done
