@@ -25,6 +25,8 @@ const I = {
   clip:'<path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
   search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff:'<path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18 18 0 0 1-2.2 3.2M6.6 6.6A18 18 0 0 0 2 12s3.5 7 10 7a10.9 10.9 0 0 0 4-.7"/><path d="M3 3l18 18"/>',
 };
 const svg = (k,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${w?` width="${w}" height="${w}"`:''}>${I[k]}</svg>`;
 
@@ -48,6 +50,7 @@ const ME = { id: document.body.dataset.userId, name: document.body.dataset.userN
 let notes = [], events = [], tags = [], people = [];
 let activeFeed = 'private', activeChan = 'all', activeTags = new Set(), search = '';
 let previews = {}, openCalNotes = new Set(), openThreads = new Set();
+let revealed = new Set();   // hidden notes whose content is temporarily shown
 let searchTimer;
 
 const avatarColor = (name) =>
@@ -193,17 +196,49 @@ function todoDueBadge(t){
   return `<span class="todo-due ${overdue?'overdue':''}" title="Due ${esc(t.due_at)}">${svg('cal',10)} ${esc(label)}</span>`;
 }
 function noteBodyHTML(n) {
+  // Hidden: show only the title (first line); the header already shows date and
+  // the tag row shows tags. Tap reveals the body for this session (not persisted).
+  if (n.hidden && !revealed.has(n.id)) {
+    const title = esc((n.content.split('\n')[0] || '').trim()) || '(untitled)';
+    return `<div class="card-title-only">${title}</div>
+      <button class="reveal-btn" onclick="event.stopPropagation();toggleReveal('${n.id}')">${svg('eye',11)} Reveal</button>`;
+  }
+  const reHide = n.hidden
+    ? `<button class="reveal-btn" onclick="event.stopPropagation();toggleReveal('${n.id}')">${svg('eyeOff',11)} Hide again</button>` : '';
   if (n.type === 'todo' && n.todos.length) {
     const done = n.todos.filter(t => t.checked).length, total = n.todos.length;
     return `<div class="todo-title">${esc(n.content.split('\n')[0])}</div>
       <div class="todo-progress-row"><span class="todo-progress-label">${done} / ${total}</span>
       <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${done/total*100}%"></div></div></div>
-      ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span>${todoDueBadge(t)}</label>`).join('')}`;
+      ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span>${todoDueBadge(t)}</label>`).join('')}${reHide}`;
   }
-  let html = `<div class="card-body">${md(n.content)}</div>`;
+  // Long bodies clamp with a Show more toggle; hydrateClamps() reveals the
+  // button only when the content actually overflows.
+  let html = `<div class="card-body clamp">${md(n.content)}</div>
+    <button class="show-more" hidden onclick="event.stopPropagation();toggleClamp(this)">Show more</button>`;
   const url = (n.content.match(/https?:\/\/[^\s)>\]]+/) || [])[0];
   if (url) html += `<span data-preview-url="${esc(url)}"></span>`;
-  return html;
+  return html + reHide;
+}
+function toggleClamp(btn){
+  const body = btn.previousElementSibling;
+  const expanded = body.classList.toggle('expanded');
+  btn.textContent = expanded ? 'Show less' : 'Show more';
+}
+function toggleReveal(id){
+  revealed.has(id) ? revealed.delete(id) : revealed.add(id);
+  renderCards();
+}
+// Show the "Show more" button only on cards whose body overflows the clamp.
+function hydrateClamps(){
+  document.querySelectorAll('.card-body.clamp').forEach(body => {
+    const btn = body.nextElementSibling;
+    if (body.scrollHeight > body.clientHeight + 4) {
+      if (btn && btn.classList.contains('show-more')) btn.hidden = false;
+    } else {
+      body.classList.remove('clamp');
+    }
+  });
 }
 
 function cardHTML(n) {
@@ -392,6 +427,7 @@ function dropdownHTML(n) {
     <div class="dd-item" onclick="copyNote('${n.id}')"><span class="di">${svg('copy')}</span> Copy text</div>
     ${n.attachments && n.attachments.length ? `<div class="dd-item" onclick="openAttachments('${n.id}')"><span class="di">${svg('clip')}</span> Manage files (${n.attachments.length})</div>` : ''}
     <div class="dd-item" onclick="togglePin('${n.id}')"><span class="di">${svg('pin')}</span> ${n.pinned?'Unpin':'Pin to top'}</div>
+    <div class="dd-item" onclick="toggleHide('${n.id}')"><span class="di">${svg(n.hidden?'eye':'eyeOff')}</span> ${n.hidden?'Unhide':'Hide contents'}</div>
     <div class="dd-item" onclick="archiveNote('${n.id}', ${n.archived?'false':'true'})"><span class="di">${svg('archive')}</span> ${n.archived?'Restore':'Archive'}</div>
     <div class="dd-item" onclick="deleteNote('${n.id}')"><span class="di">${svg('trash')}</span> Delete</div>
   </div>`;
@@ -495,6 +531,7 @@ function renderCards() {
     : `<div class="grid-empty">No ${activeFeed==='archived'?'archived ':activeFeed==='shared'?'shared ':''}notes match.</div>`;
   renderChanRail();   // notes/events just changed — a channel may now (dis)appear
   hydrateLinkPreviews();
+  hydrateClamps();
   visibleEvents().forEach(ev => loadCalNotes(ev.id));
 }
 
@@ -719,6 +756,14 @@ async function togglePin(id){
   const n = notes.find(x=>x.id===id);
   await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ pinned: !n.pinned }) });
   toast(`${svg('pin',13)} ${!n.pinned?'Pinned to top':'Unpinned'}`);
+  loadNotes();
+}
+async function toggleHide(id){
+  closeAllMenus();
+  const n = notes.find(x=>x.id===id);
+  revealed.delete(id);   // unhiding or re-hiding clears any temporary reveal
+  await api('/api/notes/'+id, { method:'PATCH', body: JSON.stringify({ hidden: !n.hidden }) });
+  toast(`${svg(!n.hidden?'eyeOff':'eye',13)} ${!n.hidden?'Contents hidden':'Contents shown'}`);
   loadNotes();
 }
 async function moveFeed(id){

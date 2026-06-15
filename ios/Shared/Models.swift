@@ -11,6 +11,9 @@ struct Note: Codable, Identifiable, Hashable {
     var pinned: Bool
     // Optional so decoding still works against servers from before archiving.
     var archived: Bool?
+    // When true, the card shows only title/date/tags until revealed. Optional
+    // so older servers (no `hidden` field) still decode.
+    var hidden: Bool?
     let createdAt: String
     let updatedAt: String
     var tags: [TagRef]
@@ -20,7 +23,7 @@ struct Note: Codable, Identifiable, Hashable {
     var replies: [Reply]
 
     enum CodingKeys: String, CodingKey {
-        case id, feed, type, content, source, pinned, archived, tags, todos, attachments
+        case id, feed, type, content, source, pinned, archived, hidden, tags, todos, attachments
         case share, replies
         case userId = "user_id"
         case userName = "user_name"
@@ -30,6 +33,11 @@ struct Note: Codable, Identifiable, Hashable {
 
     var createdDate: Date? { RemndrsDate.parse(createdAt) }
     var isArchived: Bool { archived ?? false }
+    var isHidden: Bool { hidden ?? false }
+    /// First line of the content — the de-facto title shown when hidden.
+    var titleLine: String {
+        content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? "(untitled)"
+    }
 }
 
 struct TagRef: Codable, Hashable {
