@@ -23,12 +23,18 @@ of in chat history. Update it as items land.
 - [x] Backlinks — "linked from" for `[[wikilinks]]` (#56)
 - [x] Sub-task nesting — indented checklists (#56)
 
-## Phase 3 — candidates (not started)
+## Phase 3 — in progress
 
-- **Capture & AI**: auto-tag/summarize notes via Claude, smarter voice/email
-  parsing, MCP capture upgrades.
-- **Organization**: advanced search operators (`tag:`, `is:todo`, `due:`),
-  pinned saved-searches sidebar, per-note colors.
+### Organization
+- [x] Advanced search operators — `tag:`, `is:todo|note|pinned|hidden`,
+      `has:attachment|reminder|due`, `due:today|overdue|week` (#60)
+- [ ] Pinned saved-searches sidebar
+- [ ] Per-note colors
+
+### Capture & AI (not started)
+- Auto-tag / summarize notes via Claude
+- Smarter voice/email parsing
+- MCP capture upgrades
 
 ## Notes / conventions
 

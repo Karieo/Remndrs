@@ -160,7 +160,10 @@ The main screen is a masonry grid of cards, newest first, pinned notes on top.
   (multiple tags = OR). `+ Add Tag` creates one with a palette picker;
   `# Edit Tags` renames, recolors, or deletes (notes are never deleted with a
   tag). A note's **first tag drives the card's accent color**.
-- **Search** — full-text across all your notes, debounced as you type.
+- **Search** — full-text across all your notes, debounced as you type. Supports
+  filters you can mix with text: `tag:work`, `is:todo` / `is:note` /
+  `is:pinned` / `is:hidden`, `has:attachment` / `has:reminder` / `has:due`, and
+  `due:today` / `due:overdue` / `due:week` (e.g. `is:todo due:overdue milk`).
 - **Saved searches** — once you've set a feed/channel/tag/search combination,
   hit **★ Save search** to keep it as a pill above the feed; click to re-apply,
   ✕ to remove.
