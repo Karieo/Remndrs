@@ -11,7 +11,7 @@ of in chat history. Update it as items land.
 - [x] Web Push + PWA shell (#39)
 - [x] Daily digest (email/SMS summary) (#40)
 
-## Phase 2 — Notes power features
+## Phase 2 — Notes power features ✅ (complete)
 
 - [x] Note templates (#41)
 - [x] Saved searches (#42)
@@ -20,9 +20,8 @@ of in chat history. Update it as items land.
 - [x] Wikilinks — `[[text]]` navigation (#42)
 - [x] Per-todo due dates (#43)
 - [x] Collapse ("Show more") + hide contents (#55)
-- [ ] **Backlinks** — "linked from" for `[[wikilinks]]` (in progress)
-- [ ] **Sub-task nesting** — indented checklists (deferred: large dual-client
-      rendering change)
+- [x] Backlinks — "linked from" for `[[wikilinks]]` (#56)
+- [x] Sub-task nesting — indented checklists (#56)
 
 ## Phase 3 — candidates (not started)
 

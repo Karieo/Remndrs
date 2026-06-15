@@ -371,7 +371,8 @@ def _tool_complete_todo(user, args):
     target['checked'] = checked
     # replace_todos rewrites the whole list; todos are already in position order.
     db.replace_todos(note_id, [{'text': t['text'], 'checked': t['checked'],
-                                'due_at': t.get('due_at')} for t in todos])
+                                'due_at': t.get('due_at'), 'indent': t.get('indent')}
+                               for t in todos])
     note = db.get_note(note_id)
     files.write_note_file(note, user['name'])
     sse.push_note_event('note_updated', note)

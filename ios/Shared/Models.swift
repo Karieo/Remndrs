@@ -97,9 +97,11 @@ struct TodoItem: Codable, Hashable {
     /// Optional per-item due date (naive local ISO). Optional so older servers
     /// and notes without due dates still decode.
     var dueAt: String?
+    /// Sub-task nesting level (0 = top). Optional so older servers decode.
+    var indent: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, text, checked
+        case id, text, checked, indent
         case dueAt = "due_at"
     }
 

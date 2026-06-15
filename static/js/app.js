@@ -210,7 +210,7 @@ function noteBodyHTML(n) {
     return `<div class="todo-title">${esc(n.content.split('\n')[0])}</div>
       <div class="todo-progress-row"><span class="todo-progress-label">${done} / ${total}</span>
       <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${done/total*100}%"></div></div></div>
-      ${n.todos.map(t => `<label class="todo-item" onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span>${todoDueBadge(t)}</label>`).join('')}${backlinksHTML(n)}${reHide}`;
+      ${n.todos.map(t => `<label class="todo-item"${t.indent?` style="margin-left:${t.indent*18}px"`:''} onclick="event.stopPropagation()"><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTodo('${n.id}','${t.id}')"><span class="todo-item-text ${t.checked?'done':''}">${esc(t.text)}</span>${todoDueBadge(t)}</label>`).join('')}${backlinksHTML(n)}${reHide}`;
   }
   // Long bodies clamp with a Show more toggle; hydrateClamps() reveals the
   // button only when the content actually overflows.
@@ -814,7 +814,7 @@ async function deleteNote(id){
 }
 async function toggleTodo(noteId, todoId){
   const n = notes.find(x=>x.id===noteId);
-  const todos = n.todos.map(t => ({ text:t.text, checked: t.id===todoId ? !t.checked : t.checked, due_at: t.due_at }));
+  const todos = n.todos.map(t => ({ text:t.text, checked: t.id===todoId ? !t.checked : t.checked, due_at: t.due_at, indent: t.indent }));
   await api('/api/notes/'+noteId, { method:'PATCH', body: JSON.stringify({ todos }) });
   loadNotes();
 }
@@ -1296,7 +1296,7 @@ let composerMode = 'note', composerFeed = 'private', editingNoteId = null;
 let composerAttachments = [];
 const PLACEHOLDERS = {
   note: "What's on your mind…\n\nWrite freely. #tags are pulled out automatically.",
-  todo: "Title on the first line…\nThen one task per line ([x] marks done).\nAdd @2026-07-01 to a line to set a due date.\n\n#tags work here too.",
+  todo: "Title on the first line…\nThen one task per line ([x] marks done).\nIndent a line with 2 spaces to make it a sub-task.\nAdd @2026-07-01 to set a due date.\n\n#tags work here too.",
 };
 
 function openComposer(){
@@ -1415,7 +1415,7 @@ function editNote(id){
   let text;
   if (n.type === 'todo') {
     const lines = [n.content.split('\n')[0]];
-    for (const t of n.todos) lines.push(`${t.checked ? '[x] ' : ''}${t.text}${t.due_at ? ' @'+t.due_at.slice(0,16).replace('T',' ').replace(/ 00:00$/,'') : ''}`);
+    for (const t of n.todos) lines.push(`${'  '.repeat(t.indent || 0)}${t.checked ? '[x] ' : ''}${t.text}${t.due_at ? ' @'+t.due_at.slice(0,16).replace('T',' ').replace(/ 00:00$/,'') : ''}`);
     text = lines.join('\n');
   } else {
     text = n.content;
@@ -1450,7 +1450,9 @@ function extractTags(text){
     const name = word.toUpperCase();
     if (!found.includes(name)) found.push(name);
     return pre;
-  }).replace(/[ \t]{2,}/g,' ');
+  // Collapse only *internal* runs (after a non-space) so leading indentation —
+  // used for to-do sub-tasks — is preserved.
+  }).replace(/([^\s\n])[ \t]{2,}/g,'$1 ');
   return { tags:found, clean };
 }
 
@@ -1500,10 +1502,15 @@ async function saveNote(){
   if (!editingNoteId) body.source = 'web';
 
   if (composerMode==='todo'){
-    const lines = clean.split('\n').map(l=>l.trim()).filter(Boolean);
+    // Keep raw lines (leading whitespace intact) to detect sub-task indent.
+    const lines = clean.split('\n').filter(l => l.trim());
     body.type = 'todo';
-    body.content = lines.shift() || 'Untitled list';
-    body.todos = lines.map(l=>{
+    body.content = (lines.shift() || 'Untitled list').trim();
+    body.todos = lines.map(line=>{
+      // Indent: each 2 leading spaces (or a tab) = one nesting level, capped at 4.
+      const lead = (line.match(/^[ \t]*/)[0]).replace(/\t/g, '  ');
+      const indent = Math.min(4, Math.floor(lead.length / 2));
+      let l = line.trim();
       const m = l.match(/^\[( |x|X)\]\s*(.*)$/);
       let text = m ? m[2] : l;
       const checked = m ? m[1].toLowerCase()==='x' : false;
@@ -1511,7 +1518,7 @@ async function saveNote(){
       let due_at = null;
       const dm = text.match(/\s@(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?)\s*$/);
       if (dm){ due_at = dm[1].replace(' ', 'T'); text = text.slice(0, dm.index).trim(); }
-      return { text, checked, due_at };
+      return { text, checked, due_at, indent };
     });
   } else {
     body.type = 'note';

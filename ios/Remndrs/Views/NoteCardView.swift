@@ -363,6 +363,7 @@ struct NoteCardView: View {
                     .padding(.vertical, 5)
                 }
                 .buttonStyle(.plain)
+                .padding(.leading, CGFloat((todo.indent ?? 0) * 18))   // sub-task nesting
             }
         }
     }

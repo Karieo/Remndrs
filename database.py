@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS todo_items (
   checked INTEGER NOT NULL DEFAULT 0,
   position INTEGER NOT NULL DEFAULT 0,
   due_at TEXT,
+  indent INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 
@@ -299,6 +300,8 @@ def _migrate(conn):
     todo_cols = {r['name'] for r in conn.execute('PRAGMA table_info(todo_items)')}
     if 'due_at' not in todo_cols:
         conn.execute('ALTER TABLE todo_items ADD COLUMN due_at TEXT')
+    if 'indent' not in todo_cols:
+        conn.execute('ALTER TABLE todo_items ADD COLUMN indent INTEGER NOT NULL DEFAULT 0')
 
 
 def normalize_tag(name):
@@ -547,7 +550,7 @@ def note_to_dict(row):
     note['tags'] = get_note_tags(note['id'])
     with connect() as conn:
         todos = conn.execute(
-            'SELECT id, text, checked, position, due_at FROM todo_items '
+            'SELECT id, text, checked, position, due_at, indent FROM todo_items '
             'WHERE note_id = ? ORDER BY position', (note['id'],)).fetchall()
         atts = conn.execute(
             'SELECT id, original_filename, saved_filename, mime_type, size_bytes '
@@ -613,10 +616,11 @@ def replace_todos(note_id, todos):
         conn.execute('DELETE FROM todo_items WHERE note_id = ?', (note_id,))
         for i, todo in enumerate(todos):
             conn.execute(
-                'INSERT INTO todo_items (id, note_id, text, checked, position, due_at) '
-                'VALUES (?,?,?,?,?,?)',
+                'INSERT INTO todo_items (id, note_id, text, checked, position, due_at, indent) '
+                'VALUES (?,?,?,?,?,?,?)',
                 (str(uuid.uuid4()), note_id, todo.get('text', ''),
-                 1 if todo.get('checked') else 0, i, todo.get('due_at') or None))
+                 1 if todo.get('checked') else 0, i, todo.get('due_at') or None,
+                 max(0, min(4, int(todo.get('indent') or 0)))))
 
 
 def _like_term(term):
