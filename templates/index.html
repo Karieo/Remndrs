@@ -26,10 +26,10 @@
       <button class="feed-btn" id="feedShared" onclick="setFeed('shared')">Shared <span class="feed-badge" id="sharedBadge" hidden>0</span></button>
       <button class="feed-btn" id="feedArchived" onclick="setFeed('archived')" title="Archived notes">Archived</button>
     </div>
-    <button class="icon-btn" onclick="openReminders()" title="Upcoming reminders" id="remindersBtn">⏰<span class="feed-badge" id="remindersBadge" hidden>0</span></button>
-    <button class="icon-btn" onclick="openSettings()" title="Calendars & settings" id="settingsBtn">⚙</button>
+    <button class="icon-btn" onclick="openReminders()" title="Upcoming reminders" id="remindersBtn"><span class="feed-badge" id="remindersBadge" hidden>0</span></button>
+    <button class="icon-btn" onclick="openSettings()" title="Calendars & settings" id="settingsBtn"></button>
     <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" id="themeBtn"></button>
-    <button class="icon-btn" onclick="logout()" title="Log out">Log out</button>
+    <button class="icon-btn" onclick="logout()" title="Log out" id="logoutBtn"></button>
   </div>
 </header>
 
@@ -83,7 +83,7 @@
     <div class="sheet-sub">Scheduled from the app, SMS, Telegram, or Claude</div>
     <div class="rem-list" id="remindersList"></div>
     <div class="rem-digest">
-      <label class="rem-digest-label">📬 Daily digest
+      <label class="rem-digest-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg> Daily digest
         <select id="digestHour" onchange="saveDigestHour(this.value)"></select>
       </label>
       <span class="rem-digest-hint">A summary of new notes + today's reminders, sent by email/SMS.</span>
