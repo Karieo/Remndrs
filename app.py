@@ -393,7 +393,7 @@ def api_update_note(note_id):
         return jsonify({'error': 'Not found'}), 404
     data = request.get_json(silent=True) or {}
 
-    fields = {k: data[k] for k in ('content', 'feed', 'type', 'pinned', 'archived')
+    fields = {k: data[k] for k in ('content', 'feed', 'type', 'pinned', 'archived', 'hidden')
               if k in data}
     note = db.update_note(note_id, **fields) if fields else existing
     if 'tags' in data:

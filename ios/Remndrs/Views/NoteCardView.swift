@@ -9,12 +9,14 @@ struct NoteCardView: View {
     var onSend: (() -> Void)?
     var onShareWith: (() -> Void)?
     var onArchive: (() -> Void)?
+    var onToggleHide: (() -> Void)?
     var onDelete: (() -> Void)?
     var onToggleTodo: ((TodoItem) -> Void)?
     var onReply: ((String) -> Void)?
 
     @State private var replyText = ""
     @State private var threadExpanded = false
+    @State private var revealed = false   // temporary reveal of a hidden note
 
     private var channel: Channel { Channel(source: note.source) }
     private var senderID: String { note.share?.senderId ?? note.userId }
@@ -40,18 +42,34 @@ struct NoteCardView: View {
                 tagRow.padding(.bottom, 9)
             }
 
-            if note.type == "todo" {
-                todoBody
+            if note.isHidden && !revealed {
+                Text(note.titleLine)
+                    .font(Theme.body(15)).foregroundStyle(Theme.text)
+                Button { revealed = true } label: {
+                    Label("Reveal", systemImage: "eye").font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).padding(.top, 8)
             } else {
-                Text(LocalizedStringKey(note.content))
-                    .font(Theme.body(15))
-                    .lineSpacing(4)
-                    .foregroundStyle(Theme.text)
-            }
+                if note.type == "todo" {
+                    todoBody
+                } else {
+                    Text(LocalizedStringKey(note.content))
+                        .font(Theme.body(15))
+                        .lineSpacing(4)
+                        .foregroundStyle(Theme.text)
+                }
 
-            if let url = firstURL {
-                LinkPreviewCard(url: url)
-                    .padding(.top, 11)
+                if let url = firstURL {
+                    LinkPreviewCard(url: url)
+                        .padding(.top, 11)
+                }
+
+                if note.isHidden {
+                    Button { revealed = false } label: {
+                        Label("Hide again", systemImage: "eye.slash").font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Theme.textMuted).padding(.top, 8)
+                }
             }
 
             if showSender {
@@ -82,6 +100,12 @@ struct NoteCardView: View {
             if let onShareWith {
                 Button { onShareWith() } label: {
                     Label("Share with…", systemImage: "person.crop.circle.badge.plus")
+                }
+            }
+            if let onToggleHide {
+                Button { onToggleHide() } label: {
+                    Label(note.isHidden ? "Unhide" : "Hide contents",
+                          systemImage: note.isHidden ? "eye" : "eye.slash")
                 }
             }
             if let onArchive {

@@ -98,6 +98,25 @@ button { font-family:inherit; }
 .tag-pill.active { background:color-mix(in srgb,var(--tag-color) 15%,var(--surface)); border-color:var(--tag-color); color:var(--tag-color); }
 .tag-pill:not(.active):hover { border-color:var(--border-2); color:var(--text-mid); }
 
+/* ─── Collapse (Show more) + Hide ──────────────────────────── */
+.card-body.clamp { max-height:200px; overflow:hidden; position:relative; }
+.card-body.clamp::after { content:''; position:absolute; left:0; right:0; bottom:0; height:42px;
+  background:linear-gradient(transparent, var(--surface)); pointer-events:none; }
+.card.pinned .card-body.clamp::after { background:linear-gradient(transparent, var(--pinned-bg)); }
+.card-body.expanded { max-height:none; overflow:visible; }
+.card-body.expanded::after { display:none; }
+.show-more { background:none; border:none; color:var(--accent); cursor:pointer;
+  font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; letter-spacing:0.4px;
+  text-transform:uppercase; padding:7px 0 0; }
+.show-more:hover { text-decoration:underline; }
+.card-title-only { font-size:14px; color:var(--text); font-weight:500; line-height:1.4; }
+.reveal-btn { background:none; border:1px solid var(--border); color:var(--text-muted); cursor:pointer;
+  font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; letter-spacing:0.4px;
+  text-transform:uppercase; padding:4px 9px; border-radius:5px; margin-top:9px;
+  display:inline-flex; align-items:center; gap:5px; transition:all .15s; }
+.reveal-btn:hover { border-color:var(--border-2); color:var(--text); }
+.reveal-btn svg { width:11px; height:11px; }
+
 /* ─── Wikilinks ────────────────────────────────────────────── */
 .card-body a[href^="#wiki="], .cal-note a[href^="#wiki="] {
   color:var(--accent); text-decoration:none; border-bottom:1px dashed var(--accent);

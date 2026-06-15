@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS notes (
   source TEXT NOT NULL DEFAULT 'web',
   pinned INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
+  hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   filename TEXT,
@@ -283,6 +284,8 @@ def _migrate(conn):
     note_cols = {r['name'] for r in conn.execute('PRAGMA table_info(notes)')}
     if 'archived' not in note_cols:
         conn.execute('ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+    if 'hidden' not in note_cols:
+        conn.execute('ALTER TABLE notes ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
     if 'digest_hour' not in cols:
         conn.execute('ALTER TABLE users ADD COLUMN digest_hour INTEGER')
     if 'digest_last_sent' not in cols:
@@ -540,6 +543,7 @@ def note_to_dict(row):
     note = dict(row)
     note['pinned'] = bool(note['pinned'])
     note['archived'] = bool(note['archived'])
+    note['hidden'] = bool(note['hidden'])
     note['tags'] = get_note_tags(note['id'])
     with connect() as conn:
         todos = conn.execute(
@@ -580,8 +584,8 @@ def get_note(note_id):
 
 
 def update_note(note_id, **fields):
-    allowed = {'content', 'feed', 'type', 'pinned', 'archived', 'filename', 'source'}
-    bool_cols = {'pinned', 'archived'}
+    allowed = {'content', 'feed', 'type', 'pinned', 'archived', 'hidden', 'filename', 'source'}
+    bool_cols = {'pinned', 'archived', 'hidden'}
     sets, params = [], []
     for key, value in fields.items():
         if key in allowed:
