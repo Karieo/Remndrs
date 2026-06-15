@@ -66,6 +66,35 @@ def suggest_tags(content, existing=None, limit=6):
     return out[:limit]
 
 
+def cleanup_transcript(raw):
+    """Clean a dictated voice transcript into well-punctuated prose: fix
+    punctuation/capitalisation, strip filler words, and add paragraph breaks
+    between distinct thoughts. Preserves meaning, names, numbers and #hashtags;
+    never summarises or invents content. Returns '' when OpenAI isn't
+    configured or on any error — never raises (callers fall back to regex)."""
+    raw = (raw or '').strip()
+    if not raw or not configured():
+        return ''
+    try:
+        import openai
+        client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        prompt = (
+            'Clean up this dictated voice memo. Fix punctuation and '
+            'capitalisation, remove filler words (um, uh, like, you know), and '
+            'add paragraph breaks between distinct thoughts. Do NOT summarise, '
+            'add, reorder, or drop any actual content. Keep names, numbers and '
+            '#hashtags exactly as spoken. Return only the cleaned text.\n\n'
+            + raw[:6000])
+        resp = client.chat.completions.create(
+            model=os.getenv('OPENAI_TAG_MODEL', 'gpt-4o-mini'),
+            messages=[{'role': 'user', 'content': prompt}],
+            temperature=0.2, max_tokens=1200)
+        return (resp.choices[0].message.content or '').strip()
+    except Exception:
+        log.exception('AI transcript cleanup failed')
+        return ''
+
+
 def summarize(content):
     """A 1-2 sentence TL;DR of a note's content. Returns '' when OpenAI isn't
     configured or on any error — never raises."""

@@ -100,6 +100,33 @@ def _reminder_request(subject, body):
     return None
 
 
+# Lines that mark the start of quoted reply history in a forwarded/replied email.
+_QUOTE_MARKERS = re.compile(
+    r'^\s*('
+    r'>'                                      # quoted line
+    r'|On\b.{0,200}\bwrote:\s*$'              # Gmail "On <date> X wrote:"
+    r'|-{2,}\s*Forwarded message'             # Gmail forward header
+    r'|-{3,}\s*Original Message'              # Outlook reply header
+    r'|_{5,}'                                  # Outlook divider rule
+    r')', re.IGNORECASE)
+# A signature delimiter: a line that is exactly "--"/"-- ", or a mobile
+# auto-signature ("Sent from my iPhone").
+_SIG_DELIM = re.compile(r'^\s*--\s*$|^\s*Sent from my \w', re.IGNORECASE)
+
+
+def trim_quoted(body):
+    """Drop quoted reply history and signatures so a forwarded/replied email
+    becomes just its new content. Stops at the first quote marker or signature
+    delimiter. Falls back to the original body if trimming would empty it."""
+    kept = []
+    for line in (body or '').split('\n'):
+        if _QUOTE_MARKERS.match(line) or _SIG_DELIM.match(line):
+            break
+        kept.append(line)
+    trimmed = '\n'.join(kept).strip()
+    return trimmed or (body or '').strip()
+
+
 _TAG_LINE = re.compile(r'^\s*tags?\s*:\s*(.+?)\s*$', re.IGNORECASE)
 _HASHTAG_ONLY_LINE = re.compile(r'^\s*(#[A-Za-z0-9_]+[\s,]*)+\s*$')
 
@@ -152,6 +179,7 @@ def process_inbound(form, file_storage_items):
     if not body:
         body = strip_html(form.get('body-html') or '')
 
+    body = trim_quoted(body)
     body, declared_tags = _extract_tag_lines(body)
     content = f'**{subject}**\n\n{body}' if subject else body
     tags = _extract_tags(subject, body)

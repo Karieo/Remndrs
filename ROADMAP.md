@@ -34,7 +34,8 @@ of in chat history. Update it as items land.
 ### Capture & AI
 - [x] AI tag suggestions in the composer (OpenAI, self-disabling) (#62)
 - [x] Summarize long notes — ✨ adds a TL;DR blockquote (#64)
-- [ ] Smarter voice/email parsing
+- [x] Smarter voice/email parsing — AI transcript cleanup (regex fallback) +
+      forwarded-email quote/signature trimming (#65)
 
 ### Organization
 - [x] Pin saved searches as favorites — pinned ones lead the pill bar (#63)
