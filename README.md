@@ -192,7 +192,9 @@ Press `N` or the gold `+`. The composer has two modes:
 - **Note** — freeform markdown. Type `#hashtags` anywhere; they're extracted
   live (shown in the tag preview row, marked "new" if they don't exist yet)
   and stripped from the saved text. New tags get a palette color
-  automatically.
+  automatically. **✨ Suggest tags** asks OpenAI for topic tags based on what
+  you've written (only when an OpenAI key is configured — see
+  [OpenAI](#openai-voice-transcription)).
 - **To-Do** — first line is the title, every following line becomes a
   checkbox item. Cards show an `n / m` progress bar; check items off right on
   the card. Add `@2026-07-01` (optionally with `HH:MM`) to a task line to give

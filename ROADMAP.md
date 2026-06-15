@@ -31,10 +31,14 @@ of in chat history. Update it as items land.
 - [ ] Pinned saved-searches sidebar
 - [x] Per-note colors (#61)
 
-### Capture & AI (not started)
-- Auto-tag / summarize notes via Claude
-- Smarter voice/email parsing
-- MCP capture upgrades
+### Capture & AI
+- [x] AI tag suggestions in the composer (OpenAI, self-disabling) (#62)
+- [ ] Summarize long notes
+- [ ] Smarter voice/email parsing
+
+### Organization (remaining)
+- [ ] Pinned saved-searches sidebar (saved searches already exist as a pill bar;
+      revisit only if the pills aren't enough)
 
 ## Notes / conventions
 

@@ -501,6 +501,14 @@ button { font-family:inherit; }
 .composer-tagsuggest .ct-label { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.6px; }
 .ct-suggest { font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; padding:2px 7px; border-radius:2px; cursor:pointer; background:transparent; border:1px solid color-mix(in srgb,var(--tag-color) 30%,transparent); color:var(--tag-color); opacity:0.72; transition:opacity .12s; }
 .ct-suggest:hover { opacity:1; }
+.composer-airow { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:0 16px 12px; }
+.ai-suggest { font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; letter-spacing:0.3px;
+  background:var(--surface-2); border:1px solid var(--border); color:var(--text-mid); border-radius:6px;
+  padding:5px 10px; cursor:pointer; transition:all .15s; }
+.ai-suggest:hover { border-color:var(--accent); color:var(--accent); }
+.ai-suggest:disabled { opacity:.6; cursor:default; }
+.composer-aisuggest { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.composer-aisuggest .ct-label { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.6px; }
 .composer-remind { display:flex; align-items:center; gap:8px; padding:0 16px 12px; }
 .composer-remind input[type=datetime-local] { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; outline:none; color-scheme:dark; }
 :root[data-theme="light"] .composer-remind input[type=datetime-local] { color-scheme:light; }
