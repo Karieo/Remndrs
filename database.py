@@ -665,17 +665,72 @@ def _date_pattern(query):
     return None
 
 
+_SEARCH_OP = re.compile(r'^(tag|is|has|due):(.+)$', re.IGNORECASE)
+
+
 def _apply_search(where, params, search):
-    """Append WHERE clauses for a free-text search: a date-shaped query
-    matches the note's created day; otherwise every word must appear as a
-    substring of the body or of a todo item (partial typing works, unlike
-    the whole-word FTS this replaced)."""
-    date_pattern = _date_pattern(search)
-    if date_pattern:
-        where.append('n.created_at LIKE ?')
-        params.append(date_pattern)
-        return
-    for term in re.findall(r'\S+', search):
+    """Free-text search plus structured operators:
+      tag:NAME            note carries that tag
+      is:todo|note        note type
+      is:pinned|hidden    flags
+      is:shared|private   feed
+      has:attachment|reminder|due   has a file / linked reminder / a dated todo
+      due:today|overdue|week        a todo item due in that window
+    Everything else is matched as a substring of the body or a todo item;
+    a bare date-shaped query (no operators) matches the note's created day."""
+    tokens = re.findall(r'\S+', search)
+    ops = [t for t in tokens if _SEARCH_OP.match(t)]
+    free = [t for t in tokens if not _SEARCH_OP.match(t)]
+
+    if not ops:
+        date_pattern = _date_pattern(search)
+        if date_pattern:
+            where.append('n.created_at LIKE ?')
+            params.append(date_pattern)
+            return
+
+    now = datetime.now()
+    for token in ops:
+        key, val = _SEARCH_OP.match(token).groups()
+        key, val = key.lower(), val.lower()
+        if key == 'tag':
+            where.append('EXISTS (SELECT 1 FROM note_tags nt2 JOIN tags t2 '
+                         'ON t2.id = nt2.tag_id WHERE nt2.note_id = n.id AND t2.name = ?)')
+            params.append(normalize_tag(val))
+        elif key == 'is' and val in ('todo', 'note'):
+            where.append('n.type = ?')
+            params.append(val)
+        elif key == 'is' and val == 'pinned':
+            where.append('n.pinned = 1')
+        elif key == 'is' and val == 'hidden':
+            where.append('n.hidden = 1')
+        elif key == 'is' and val in ('shared', 'private'):
+            where.append('n.feed = ?')
+            params.append(val)
+        elif key == 'has' and val in ('attachment', 'attachments', 'file', 'files'):
+            where.append('EXISTS (SELECT 1 FROM attachments a WHERE a.note_id = n.id)')
+        elif key == 'has' and val in ('reminder', 'reminders'):
+            where.append('EXISTS (SELECT 1 FROM reminders r WHERE r.note_id = n.id)')
+        elif key == 'has' and val in ('due', 'duedate'):
+            where.append('EXISTS (SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id '
+                         'AND ti.due_at IS NOT NULL)')
+        elif key == 'due' and val == 'today':
+            where.append('EXISTS (SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id '
+                         'AND ti.due_at LIKE ?)')
+            params.append(now.date().isoformat() + '%')
+        elif key == 'due' and val == 'overdue':
+            where.append('EXISTS (SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id '
+                         'AND ti.checked = 0 AND ti.due_at IS NOT NULL AND ti.due_at < ?)')
+            params.append(now.isoformat(timespec='seconds'))
+        elif key == 'due' and val == 'week':
+            where.append('EXISTS (SELECT 1 FROM todo_items ti WHERE ti.note_id = n.id '
+                         'AND ti.due_at IS NOT NULL AND ti.due_at >= ? AND ti.due_at <= ?)')
+            params.extend([now.isoformat(timespec='seconds'),
+                           (now + timedelta(days=7)).isoformat(timespec='seconds')])
+        else:
+            free.append(token)   # unrecognised operator → treat as plain text
+
+    for term in free:
         like = _like_term(term)
         where.append(
             "(n.content LIKE ? ESCAPE '\\' OR EXISTS ("
