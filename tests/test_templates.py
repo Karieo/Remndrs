@@ -1,7 +1,62 @@
 """Note templates: db CRUD + the /api/templates routes (create/list/delete,
 per-user scoping and ownership)."""
 
+from html.parser import HTMLParser
+
 import database as db
+
+
+# ── Feed page DOM structure ──────────────────────────────────────────────────
+
+class _AncestryParser(HTMLParser):
+    """Record, for every element carrying an id, the list of ancestor ids.
+
+    Models the browser's open-element stack with the same leniency: a dropped
+    close tag leaves its element open, so later siblings nest inside it.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._stack = []        # (tag, id_or_None) for each open element
+        self.ancestors = {}     # id -> [ancestor ids, outermost first]
+
+    def handle_starttag(self, tag, attrs):
+        eid = dict(attrs).get('id')
+        if eid is not None:
+            self.ancestors[eid] = [i for _t, i in self._stack if i]
+        self._stack.append((tag, eid))
+
+    def handle_startendtag(self, tag, attrs):
+        # Self-closing (e.g. SVG <path/>) — never opens a scope.
+        pass
+
+    def handle_endtag(self, tag):
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
+                return
+
+
+def _feed_html(client, make_user):
+    make_user('Clay')
+    client.post('/api/auth/login', json={'login': 'Clay', 'password': 'pw'})
+    return client.get('/').get_data(as_text=True)
+
+
+def test_feed_modals_are_not_nested(client, make_user):
+    """Regression: a dropped </div> in the reminders sheet once left
+    #remindersOverlay unclosed, nesting every later modal inside it. Because
+    that overlay is display:none, the composer / settings / share sheets then
+    rendered at 0x0 — invisible with no JS error. Each modal overlay must be a
+    top-level element, never a descendant of another overlay."""
+    parser = _AncestryParser()
+    parser.feed(_feed_html(client, make_user))
+    for modal in ('composer', 'settingsOverlay', 'shareOverlay', 'tagAddOverlay',
+                  'tagEditOverlay', 'attachmentsOverlay', 'templatesOverlay'):
+        assert modal in parser.ancestors, f'{modal} missing from feed page'
+        assert 'remindersOverlay' not in parser.ancestors[modal], (
+            f'#{modal} is nested inside #remindersOverlay — a close tag was '
+            f'dropped, so this modal renders 0x0 inside a hidden parent')
 
 
 def _login(client, name='Clay'):
