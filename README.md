@@ -102,6 +102,48 @@ to your Mac.
 
 ---
 
+## Run with Docker (Linux / Jetson / Raspberry Pi / NAS)
+
+Remndrs also runs as a container — handy for an always-on box like an NVIDIA
+Jetson or a Pi. The image is architecture-independent (builds natively on
+x86-64 and arm64); all dependencies ship `aarch64` wheels, so no compiler is
+needed.
+
+```bash
+git clone https://github.com/Karieo/Remndrs.git && cd Remndrs
+cp .env.example .env
+# Edit .env — at minimum set SESSION_SECRET (a long random string),
+# OWNER_NAME / OWNER_PASSWORD, and TIMEZONE (e.g. America/New_York).
+docker compose up -d --build
+```
+
+Then open `http://<host-ip>:3000`.
+
+**What's persisted** (bind-mounted under `./data` on the host, so they survive
+`docker compose down` and are trivial to back up):
+
+| Host path | In container | Holds |
+|---|---|---|
+| `./data/db` | `/app/data` | the SQLite database (`remndrs.db`) |
+| `./data/uploads` | `/app/uploads` | uploaded/MMS/email files |
+| `./data/notes` | `/app/notes` | the Obsidian-compatible `.md` notes |
+| `./.env` | `/app/.env` | secrets + runtime ⚙ Settings edits |
+
+**Notes for headless/ARM boxes:**
+
+- **Timezone** — a bare container is UTC; set `TIMEZONE` in `.env` or reminders
+  fire at the wrong wall-clock time. (`tzdata` is baked into the image.)
+- **One instance only** — the reminder/digest/calendar scheduler runs
+  in-process. Don't scale the service or front it with a multi-worker WSGI
+  server, or jobs double-fire. The built-in server is fine for a home setup.
+- **iCloud** — there's no iCloud on Linux; `NOTES_FOLDER` is set to the mounted
+  `/app/notes` volume so your `.md` files live on the host.
+- **Updating** — `git pull && docker compose up -d --build`.
+- **Logs / health** — `docker compose logs -f`; the container has a healthcheck
+  hitting `/api/version`.
+
+---
+
 ## Using the app
 
 ### The feed
