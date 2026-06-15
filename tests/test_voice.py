@@ -54,3 +54,22 @@ def test_extract_voice_tags_tag_this_as():
 def test_extract_voice_tags_deduplicates():
     tags = voice.extract_voice_tags('#work and hashtag work')
     assert tags.count('WORK') == 1
+
+
+# ── smart_clean (AI cleanup with regex fallback) ─────────────────────────────
+
+def test_smart_clean_falls_back_to_regex(monkeypatch):
+    # No OpenAI key -> ai.cleanup_transcript returns '', so we get the regex pass.
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    out = voice.smart_clean('um I need to uh buy milk')
+    assert 'um' not in out.lower().split() and 'milk' in out
+
+
+def test_smart_clean_prefers_ai_when_available(monkeypatch):
+    monkeypatch.setattr(voice.ai, 'cleanup_transcript', lambda raw: 'Buy milk.')
+    assert voice.smart_clean('um buy milk') == 'Buy milk.'
+
+
+def test_smart_clean_empty_stays_empty(monkeypatch):
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    assert voice.smart_clean('') == ''

@@ -90,3 +90,38 @@ def test_reminder_request_ignores_passing_mention():
 def test_reminder_request_skips_quoted_first_line():
     # Forwarded/quoted lines (starting with > or ---) are not candidates.
     assert ei._reminder_request('Fwd: hi', '> remind me tomorrow to x') is None
+
+
+# ── trim_quoted (strip reply history & signatures) ───────────────────────────
+
+def test_trim_quoted_drops_gmail_reply():
+    body = ("Sounds good, let's do it.\n\n"
+            "On Mon, Jun 15, 2026 at 3:00 PM John <j@x.com> wrote:\n"
+            "> the original question\n> more quoted text")
+    assert ei.trim_quoted(body) == "Sounds good, let's do it."
+
+
+def test_trim_quoted_drops_signature_and_mobile_footer():
+    assert ei.trim_quoted("Real content\n--\nClay\n555-1234") == "Real content"
+    assert ei.trim_quoted("Real content\nSent from my iPhone") == "Real content"
+
+
+def test_trim_quoted_drops_forwarded_header():
+    body = ("Check this out\n\n---------- Forwarded message ---------\n"
+            "From: someone\nSubject: hi")
+    assert ei.trim_quoted(body) == "Check this out"
+
+
+def test_trim_quoted_keeps_plain_body():
+    assert ei.trim_quoted("just a normal note\nsecond line") == \
+        "just a normal note\nsecond line"
+
+
+def test_trim_quoted_falls_back_when_all_quoted():
+    body = "> only quoted content\n> nothing new"
+    assert ei.trim_quoted(body) == body
+
+
+def test_trim_quoted_handles_empty():
+    assert ei.trim_quoted('') == ''
+    assert ei.trim_quoted(None) == ''

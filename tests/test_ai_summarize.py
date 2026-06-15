@@ -57,3 +57,28 @@ def test_route_reports_configured(client, make_user, monkeypatch):
     resp = client.post('/api/ai/summarize', json={'content': 'hello'})
     assert resp.status_code == 200
     assert resp.get_json() == {'configured': False, 'summary': ''}
+
+
+# ── cleanup_transcript ───────────────────────────────────────────────────────
+
+def test_cleanup_no_key_returns_empty(monkeypatch):
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    assert ai.cleanup_transcript('um buy milk') == ''
+
+
+def test_cleanup_returns_model_text(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'sk-test')
+    _install_fake_openai(monkeypatch, '  Buy milk. Call mom. #todo  ')
+    assert ai.cleanup_transcript('um buy milk uh call mom hashtag todo') == \
+        'Buy milk. Call mom. #todo'
+
+
+def test_cleanup_error_returns_empty(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'sk-test')
+    fake = types.ModuleType('openai')
+
+    class _Boom:
+        def __init__(self, **kw): raise RuntimeError('down')
+    fake.OpenAI = _Boom
+    monkeypatch.setitem(sys.modules, 'openai', fake)
+    assert ai.cleanup_transcript('x') == ''

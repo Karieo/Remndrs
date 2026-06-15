@@ -1214,7 +1214,7 @@ def api_voice_transcribe():
     try:
         upload.save(tmp_path)
         raw = voice.transcribe(tmp_path)
-        transcript = voice.clean_transcript(raw)
+        transcript = voice.smart_clean(raw)
         tags = voice.extract_voice_tags(transcript)
         return jsonify({'transcript': transcript, 'tags': tags,
                         'suggested_tags': tags})
@@ -1456,7 +1456,7 @@ def webhook_voice():
         resp.raise_for_status()
         with open(tmp_path, 'wb') as f:
             f.write(resp.content)
-        transcript = voice.clean_transcript(voice.transcribe(tmp_path))
+        transcript = voice.smart_clean(voice.transcribe(tmp_path))
         tags = voice.extract_voice_tags(transcript)
         feed = 'shared' if 'SHARED' in tags else 'private'
         note = db.create_note(user['id'], content=transcript, source='voice',

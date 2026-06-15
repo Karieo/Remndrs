@@ -4,6 +4,8 @@ import logging
 import os
 import re
 
+import ai
+
 log = logging.getLogger(__name__)
 
 WHISPER_MAX_BYTES = 25 * 1024 * 1024
@@ -43,6 +45,13 @@ def clean_transcript(raw: str) -> str:
     if text:
         text = text[0].upper() + text[1:]
     return text
+
+
+def smart_clean(raw: str) -> str:
+    """Clean a transcript, preferring the AI pass (punctuation, paragraphs,
+    filler removal) and falling back to the deterministic regex pass when
+    OpenAI is unavailable or errors. Result is non-empty whenever `raw` is."""
+    return ai.cleanup_transcript(raw) or clean_transcript(raw)
 
 
 def extract_voice_tags(transcript: str) -> list:
