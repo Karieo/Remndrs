@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+## STATUS (updated 2026-06-27)
+- Status: ~98% complete, stable. Waiting on new feature ideas before more work.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What This Is
