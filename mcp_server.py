@@ -45,6 +45,33 @@ INSTRUCTIONS = (
 MAX_RESULTS = 20
 
 
+def _now_hint():
+    """A live clock anchor appended to the server instructions.
+
+    Without it Claude has to guess the user's timezone and UTC offset, and a
+    wrong guess is the usual cause of a reminder landing an hour off: Claude
+    stamps a time with, say, a -05:00 (standard-time) offset while the user is
+    actually on -04:00 (daylight time), and the server faithfully shifts it an
+    hour into the future. Telling Claude the real local time — and asking it to
+    send a naive local timestamp with no offset at all — removes the guess."""
+    now = datetime.now().astimezone()
+    off = now.strftime('%z')                       # e.g. -0400
+    off = f'{off[:3]}:{off[3:]}' if off else ''    # -> -04:00
+    tzname = now.strftime('%Z')                    # e.g. EDT
+    return (f" The user's current local time is "
+            f"{now.strftime('%A, %B %-d %Y at %-I:%M %p')} "
+            f"({tzname} UTC{off}). Read every time the user gives in this "
+            "timezone and send it as a naive local timestamp with no UTC offset "
+            "or 'Z' suffix (e.g. '2026-06-13T15:00' for 3 pm) so it is stored as "
+            "the exact wall-clock time they meant.")
+
+
+def _instructions():
+    """Server instructions with a live local-time anchor (computed per call so
+    it stays current and reflects the configured TIMEZONE)."""
+    return INSTRUCTIONS + _now_hint()
+
+
 class ToolError(Exception):
     """A tool-domain failure Claude can read and correct (bad time string,
     missing argument) — returned as result.isError, not a JSON-RPC error."""
@@ -492,11 +519,15 @@ TOOLS = [
                                        '(content becomes its title).'},
          'remind_at': {'type': 'string',
                        'description': 'Optional date and time to be reminded '
-                                      'about this note: ISO 8601 '
-                                      '("2026-06-13T09:00") or natural '
-                                      'language ("tomorrow at 9am"). Must be '
-                                      'in the future; UTC/offset times are '
-                                      "converted to the user's local time."},
+                                      'about this note. Send a naive local '
+                                      'time in the user\'s timezone with no '
+                                      'offset or "Z" suffix (e.g. '
+                                      '"2026-06-13T09:00"), or natural language '
+                                      '("tomorrow at 9am"). Must be in the '
+                                      'future. (A UTC/offset time still works — '
+                                      "it's converted to local — but a naive "
+                                      'local time avoids any off-by-an-hour '
+                                      'surprise.)'},
          'repeat': {'type': 'string',
                     'description': 'Optional recurrence for the note\'s reminder '
                                    '(needs remind_at): "daily", "weekly", '
@@ -510,12 +541,15 @@ TOOLS = [
                      "user's local timezone."),
      'inputSchema': {'type': 'object', 'properties': {
          'when': {'type': 'string',
-                  'description': 'When to fire: ISO 8601 '
-                                 '("2026-06-13T09:00") or natural language '
-                                 '("tomorrow at 9am", "Friday 3pm"). Must be '
-                                 'in the future. Naive times are read in the '
-                                 "user's local timezone; UTC/offset times "
-                                 '(e.g. with a Z suffix) are converted to it.'},
+                  'description': 'When to fire. Send a naive local time in the '
+                                 "user's timezone with no offset or \"Z\" "
+                                 'suffix (e.g. "2026-06-13T09:00"), or natural '
+                                 'language ("tomorrow at 9am", "Friday 3pm"). '
+                                 'Must be in the future. Naive times are read '
+                                 "in the user's local timezone; a UTC/offset "
+                                 'time (e.g. with a Z suffix) is converted to '
+                                 'it, but sending naive local avoids any '
+                                 'off-by-an-hour surprise.'},
          'message': {'type': 'string',
                      'description': 'What to remind the user about.'},
          'repeat': {'type': 'string',
@@ -675,7 +709,8 @@ TOOLS = [
          'reminder_id': {'type': 'string',
                          'description': 'The reminder to snooze.'},
          'when': {'type': 'string',
-                  'description': 'New time: ISO 8601 ("2026-06-13T18:00") or '
+                  'description': 'New time: a naive local time with no offset '
+                                 'or "Z" suffix (e.g. "2026-06-13T18:00"), or '
                                  'natural language ("in 2 hours", "tomorrow at '
                                  '9am"). Must be in the future.'}},
          'required': ['reminder_id', 'when']}},
@@ -729,7 +764,7 @@ def _dispatch(user, msg):
                                    else LATEST_PROTOCOL,
                 'capabilities': {'tools': {}},
                 'serverInfo': {'name': 'Remndrs', 'version': SERVER_VERSION},
-                'instructions': INSTRUCTIONS,
+                'instructions': _instructions(),
             })
         if method == 'ping':
             return _ok(msg_id, {})

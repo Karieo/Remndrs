@@ -196,3 +196,21 @@ def test_parse_when_offset_does_not_crash_comparison(make_user):
         user, {'when': '2099-01-01T09:00:00+00:00', 'message': 'sync'})
     assert 'sync' in out
     assert db.list_reminders(user['id'])
+
+
+# ── local-time anchor in the server instructions ──────────────────────────
+
+def test_instructions_include_live_local_time_anchor():
+    # The anchor tells Claude the real local time + UTC offset so it stops
+    # guessing — a wrong guess is what shifts reminders an hour into the future.
+    text = mcp._instructions()
+    assert mcp.INSTRUCTIONS in text          # base instructions preserved
+    assert 'current local time' in text
+    assert 'UTC' in text and 'naive local timestamp' in text
+
+
+def test_initialize_serves_the_time_anchor():
+    resp = mcp._dispatch(_user(), {
+        'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+        'params': {'protocolVersion': '2025-06-18'}})
+    assert 'current local time' in resp['result']['instructions']
