@@ -32,6 +32,38 @@ def validate_twilio_signature(request):
         request.headers.get('X-Twilio-Signature', ''))
 
 
+def normalize_phone(number):
+    """Canonical international number; never infer a country or accept extensions.
+
+    Ignore display punctuation only. Twilio sends E.164 numbers; stored personal
+    and destination numbers may contain spaces, parentheses, dots or hyphens.
+    Anonymous, short-code and local-only callers fail closed.
+    """
+    if not isinstance(number, str) or not re.fullmatch(r'[+0-9 ()\t\r\n.\-]+', number):
+        return None
+    canonical = re.sub(r'[ ()\t\r\n.\-]', '', number)
+    return canonical if re.fullmatch(r'\+[1-9][0-9]{7,14}', canonical) else None
+
+
+def authorized_inbound_user(to_number, sender_number):
+    """Provider signatures authenticate Twilio, not the person sending/calling.
+
+    Resolve exactly one destination owner, then require that owner's personal
+    number. Missing or ambiguous configuration is denied, never a global-owner
+    fallback. This gate is shared by SMS and both voice webhook stages.
+    """
+    destination = normalize_phone(to_number)
+    sender = normalize_phone(sender_number)
+    if not destination or not sender:
+        return None
+    matches = [u for u in db.list_users()
+               if normalize_phone(u.get('twilio_number')) == destination]
+    if len(matches) != 1:
+        return None
+    user = matches[0]
+    return user if normalize_phone(user.get('phone_number')) == sender else None
+
+
 def send_sms(user, to_number, body):
     if not twilio_configured():
         return
@@ -160,9 +192,9 @@ def handle_inbound(form):
     to_number = form.get('To', '')
     body = (form.get('Body') or '').strip()
 
-    user = db.get_user_by_twilio_number(to_number)
+    user = authorized_inbound_user(to_number, form.get('From'))
     if not user:
-        return "This number isn't configured."
+        return None
 
     upper = body.upper()
     if upper.startswith('GET '):
@@ -174,3 +206,4 @@ def handle_inbound(form):
     if upper.startswith('REMIND ME'):
         return create_reminder_from_text(user, body[len('REMIND ME'):].strip())
     return create_note_from_sms(user, body, form)
+

@@ -50,12 +50,12 @@ def test_snippet_annotates_todo_count():
 
 def test_handle_inbound_unknown_number(make_user):
     reply = sms.handle_inbound({'To': '+10000000000', 'Body': 'hi'})
-    assert "isn't configured" in reply
+    assert reply is None
 
 
 def test_handle_inbound_free_text_creates_note(make_user):
-    user = make_user('Clay', twilio_number='+15551234567')
-    reply = sms.handle_inbound({'To': '+15551234567', 'Body': 'remember the milk',
+    user = make_user('Clay', twilio_number='+15551234567', phone_number='+15557654321')
+    reply = sms.handle_inbound({'To': '+15551234567', 'From': '+15557654321', 'Body': 'remember the milk',
                                'NumMedia': '0'})
     assert reply == '✓ Saved'
     notes = db.recent_notes(user['id'])
@@ -66,39 +66,39 @@ def test_handle_inbound_free_text_creates_note(make_user):
 
 
 def test_handle_inbound_shared_hashtag_routes_to_shared_feed(make_user):
-    user = make_user('Clay', twilio_number='+15551234567')
-    sms.handle_inbound({'To': '+15551234567', 'Body': 'dinner plan #shared',
+    user = make_user('Clay', twilio_number='+15551234567', phone_number='+15557654321')
+    sms.handle_inbound({'To': '+15551234567', 'From': '+15557654321', 'Body': 'dinner plan #shared',
                        'NumMedia': '0'})
     note = db.list_notes(user['id'])[0]
     assert note['feed'] == 'shared'
 
 
 def test_handle_inbound_list_command(make_user, make_note):
-    user = make_user('Clay', twilio_number='+15551234567')
+    user = make_user('Clay', twilio_number='+15551234567', phone_number='+15557654321')
     make_note(user, content='note one')
-    reply = sms.handle_inbound({'To': '+15551234567', 'Body': 'LIST'})
+    reply = sms.handle_inbound({'To': '+15551234567', 'From': '+15557654321', 'Body': 'LIST'})
     assert 'most recent' in reply
     assert 'note one' in reply
 
 
 def test_handle_inbound_get_command_is_case_insensitive(make_user, make_note):
-    user = make_user('Clay', twilio_number='+15551234567')
+    user = make_user('Clay', twilio_number='+15551234567', phone_number='+15557654321')
     make_note(user, content='tagged note', tags=['IDEAS'])
-    reply = sms.handle_inbound({'To': '+15551234567', 'Body': 'get #ideas'})
+    reply = sms.handle_inbound({'To': '+15551234567', 'From': '+15557654321', 'Body': 'get #ideas'})
     assert '#IDEAS' in reply
     assert 'tagged note' in reply
 
 
 def test_handle_inbound_find_command(make_user, make_note):
-    user = make_user('Clay', twilio_number='+15551234567')
+    user = make_user('Clay', twilio_number='+15551234567', phone_number='+15557654321')
     make_note(user, content='dentist appointment tuesday')
-    reply = sms.handle_inbound({'To': '+15551234567', 'Body': 'FIND dentist'})
+    reply = sms.handle_inbound({'To': '+15551234567', 'From': '+15557654321', 'Body': 'FIND dentist'})
     assert 'dentist' in reply
 
 
 def test_handle_inbound_get_with_no_results(make_user):
-    make_user('Clay', twilio_number='+15551234567')
-    reply = sms.handle_inbound({'To': '+15551234567', 'Body': 'GET #nope'})
+    make_user('Clay', twilio_number='+15551234567', phone_number='+15557654321')
+    reply = sms.handle_inbound({'To': '+15551234567', 'From': '+15557654321', 'Body': 'GET #nope'})
     assert 'No notes tagged #NOPE' in reply
 
 
@@ -134,3 +134,4 @@ def test_telegram_handle_update_ignores_empty_message(monkeypatch):
     telegram.handle_update({'message': {'chat': {'id': 1}, 'text': '   '}})
     telegram.handle_update({})  # no message key at all
     assert called == []
+
