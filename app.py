@@ -8,9 +8,12 @@ import re
 import secrets
 import socket
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+
+from itsdangerous import BadData, URLSafeTimedSerializer
 
 from dotenv import load_dotenv
 
@@ -1405,6 +1408,8 @@ def webhook_sms():
         return '', 200
     if not sms.validate_twilio_signature(request):
         return '', 403
+    if not sms.authorized_inbound_user(request.form.get('To'), request.form.get('From')):
+        return '', 403
     reply = sms.handle_inbound(request.form)
     twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
     if reply:
@@ -1424,14 +1429,94 @@ def webhook_telegram():
     return '', 200
 
 
+# Recording-status callbacks carry CallSid, not necessarily From/To. A short-lived
+# one-use context binds the already authorized answer request to that callback.
+# Pending contexts live only in this process: restart intentionally fails closed.
+_VOICE_CONTEXT_TTL = 15 * 60
+_VOICE_CONTEXTS = {}
+_VOICE_CONTEXT_LOCK = threading.Lock()
+
+
+def _voice_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt='remndrs-voice-callback-v1')
+
+
+def _voice_config_fingerprint(user):
+    value = (sms.normalize_phone(user.get('twilio_number')) or '') + '\0' + (sms.normalize_phone(user.get('phone_number')) or '')
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _new_voice_context(user, call_sid):
+    if not re.fullmatch(r'CA[0-9a-fA-F]{32}', call_sid or ''):
+        return None
+    now = time.time()
+    with _VOICE_CONTEXT_LOCK:
+        for key, record in list(_VOICE_CONTEXTS.items()):
+            if record['expires'] < now:
+                del _VOICE_CONTEXTS[key]
+        binding = (user['id'], call_sid, _voice_config_fingerprint(user))
+        for record in _VOICE_CONTEXTS.values():
+            if record['binding'] == binding:
+                return record['token']  # Answer retries cannot mint another use.
+        if len(_VOICE_CONTEXTS) >= 1000:
+            return None
+        nonce = secrets.token_urlsafe(24)
+        token = _voice_serializer().dumps({'user': user['id'], 'call': call_sid,
+                                          'config': binding[2], 'nonce': nonce})
+        _VOICE_CONTEXTS[nonce] = {'expires': now + _VOICE_CONTEXT_TTL,
+                                  'state': 'pending', 'binding': binding, 'token': token}
+        return token
+
+
+def _claim_voice_context(token, call_sid):
+    try:
+        payload = _voice_serializer().loads(token or '', max_age=_VOICE_CONTEXT_TTL)
+    except BadData:
+        return None
+    if (not isinstance(payload, dict)
+            or any(not isinstance(payload.get(key), str)
+                   for key in ('user', 'call', 'config', 'nonce'))
+            or payload['call'] != call_sid):
+        return None
+    user = db.get_user(payload.get('user'))
+    if not user or payload.get('config') != _voice_config_fingerprint(user):
+        return None
+    authorized = sms.authorized_inbound_user(user.get('twilio_number'), user.get('phone_number'))
+    if not authorized or authorized['id'] != user['id']:
+        return None
+    nonce = payload.get('nonce')
+    with _VOICE_CONTEXT_LOCK:
+        record = _VOICE_CONTEXTS.get(nonce)
+        if not record or record['expires'] < time.time():
+            return None
+        state = record['state']
+        if state == 'pending':
+            record['state'] = 'processing'
+    return user, nonce, state
+
+
+def _finish_voice_context(nonce, state):
+    with _VOICE_CONTEXT_LOCK:
+        if nonce in _VOICE_CONTEXTS:
+            _VOICE_CONTEXTS[nonce]['state'] = state
+
+
 @app.route('/webhooks/voice/answer', methods=['POST'])
 def webhook_voice_answer():
     if not sms.twilio_configured() or not sms.validate_twilio_signature(request):
         return '', 403
+    user = sms.authorized_inbound_user(
+        request.form.get('To') or request.form.get('Called'),
+        request.form.get('From') or request.form.get('Caller'))
+    if not user:
+        return '', 403
+    context = _new_voice_context(user, request.form.get('CallSid'))
+    if not context:
+        return '', 503
     twiml = ('<?xml version="1.0" encoding="UTF-8"?>'
              '<Response><Say>Recording. Hang up when done.</Say>'
              '<Record maxLength="300" playBeep="true" '
-             'recordingStatusCallback="/webhooks/voice"/></Response>')
+             f'recordingStatusCallback="/webhooks/voice?context={context}"/></Response>')
     return Response(twiml, mimetype='text/xml')
 
 
@@ -1439,16 +1524,22 @@ def webhook_voice_answer():
 def webhook_voice():
     if not sms.twilio_configured() or not sms.validate_twilio_signature(request):
         return '', 403
+    if request.form.get('RecordingStatus') != 'completed':
+        return '', 400
+    context = _claim_voice_context(request.args.get('context'), request.form.get('CallSid'))
+    if not context:
+        return '', 403
+    user, nonce, state = context
+    if state == 'done':
+        return '', 200  # Provider retry: do not create a second note or send again.
+    if state == 'processing':
+        return '', 409
     recording_url = request.form.get('RecordingUrl')
-    to_number = request.form.get('To') or request.form.get('Called', '')
-    caller = request.form.get('From') or request.form.get('Caller', '')
-    user = db.get_user_by_twilio_number(to_number)
-    if not recording_url or not user:
-        return '', 200
-    if not voice.openai_configured():
-        log.warning('Voice recording received but OPENAI_API_KEY is not set')
-        return '', 200
-
+    caller = user.get('phone_number')
+    if not recording_url or not voice.openai_configured():
+        _finish_voice_context(nonce, 'pending')
+        return '', 503
+    note = None
     tmp_path = os.path.join(UPLOADS_DIR, f'{uuid.uuid4().hex}.mp3')
     try:
         auth = (os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
@@ -1467,8 +1558,13 @@ def webhook_voice():
         if caller:
             sms.send_sms(user, caller,
                          f'✓ Voice note saved: "{transcript[:80]}"')
+        _finish_voice_context(nonce, 'done')
     except Exception:
+        # Retry only before creating a note. Once inserted, avoid duplicate notes
+        # even if a later mirror/notification step fails (repair may be needed).
+        _finish_voice_context(nonce, 'done' if note else 'pending')
         log.exception('Voice webhook processing failed')
+        return '', 500
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -1516,3 +1612,4 @@ if __name__ == '__main__':
     port = pick_port()
     log.info('Remndrs running on http://localhost:%d', port)
     app.run(host='0.0.0.0', port=port, threaded=True)
+

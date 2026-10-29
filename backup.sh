@@ -1,101 +1,103 @@
 #!/bin/bash
-# Remndrs off-box backup — copies BOTH the notes folder and the SQLite index
-# to another machine over SSH. Designed for an always-on Pi whose only copy
-# of your data otherwise lives on a single SD card.
-#
-# What it backs up:
-#   • $NOTES_FOLDER          → $BACKUP_DEST/notes/   (the .md files: content)
-#   • data/remndrs.db        → $BACKUP_DEST/db/      (the index: tags, todos,
-#                                                     reminder schedules, shares)
-#
-# The DB is snapshotted with SQLite's online-backup API first, so it's a
-# consistent copy even while the app is mid-write. DB snapshots are dated and
-# rotated; notes are mirrored without --delete so a deletion on the Pi never
-# wipes the backup copy.
-#
-# Configure in .env (or the environment):
-#   BACKUP_DEST=user@host:path     e.g. clay@macbook.local:RemndrsBackup   (required)
-#   BACKUP_SSH_KEY=~/.ssh/id_ed25519   private key for unattended cron      (optional)
-#   BACKUP_KEEP_DB=14              how many dated DB snapshots to keep       (optional)
-#
-# Run by hand to test, then from cron (see PI_SETUP.md → "Backing up the Pi").
+# Remndrs off-box backup. See BACKUP_RECOVERY.md for layouts and restore checks.
+# Backs up SQLite plus the entire notes tree (including persistent attachments).
 set -euo pipefail
-
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$APP_DIR"
-
-bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
-ok()    { printf '  \033[32m✓\033[0m %s\n' "$*"; }
-note()  { printf '  \033[33m•\033[0m %s\n' "$*"; }
-fail()  { printf '  \033[31m✗ %s\033[0m\n' "$*"; exit 1; }
-
-env_value() { grep "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2-; }
-expand()    { eval echo "$1"; }   # expand a leading ~ in a path
-
+SNAP=''
+cleanup() {
+  status=$?
+  [ -z "$SNAP" ] || rm -f "$SNAP"
+  if [ "$status" -ne 0 ]; then
+    printf 'Remndrs backup FAILED (exit %s); do not treat this run as recoverable.\n' "$status" >&2
+  fi
+}
+trap cleanup EXIT
+fail() { printf 'Remndrs backup: %s\n' "$*" >&2; exit 1; }
+# Never source/eval .env. Missing optional keys must return success under pipefail.
+env_value() {
+  local line=''
+  line="$(grep "^$1=" .env 2>/dev/null | head -1)" || true
+  printf '%s' "${line#*=}"
+}
+expand() { printf '%s' "${1/#\~/$HOME}"; }
+config() {
+  local value="${!1:-}"
+  [ -n "$value" ] || value="$(env_value "$1")"
+  # Support conventional whole-value .env quoting, without shell evaluation.
+  if [[ "$value" == \"*\" && ${#value} -ge 2 ]] || [[ "$value" == \'*\' && ${#value} -ge 2 ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
 PYTHON="$APP_DIR/venv/bin/python"
-[ -x "$PYTHON" ] || PYTHON="$(command -v python3)" || fail "python3 not found"
-
-# ── Config ───────────────────────────────────────────────
-[ -f .env ] || fail "No .env found in $APP_DIR — run this on the Pi where Remndrs lives"
-
-BACKUP_DEST="${BACKUP_DEST:-$(env_value BACKUP_DEST)}"
-[ -n "$BACKUP_DEST" ] || fail "Set BACKUP_DEST in .env, e.g. BACKUP_DEST=clay@macbook.local:RemndrsBackup"
-case "$BACKUP_DEST" in
-  *:*) : ;;  # user@host:path
-  *)   fail "BACKUP_DEST must be remote (user@host:path), got '$BACKUP_DEST'" ;;
-esac
-
-BACKUP_SSH_KEY="${BACKUP_SSH_KEY:-$(env_value BACKUP_SSH_KEY)}"
-BACKUP_KEEP_DB="${BACKUP_KEEP_DB:-$(env_value BACKUP_KEEP_DB)}"
-BACKUP_KEEP_DB="${BACKUP_KEEP_DB:-14}"
-
-NOTES_FOLDER="$(expand "$(env_value NOTES_FOLDER)")"
-[ -n "$NOTES_FOLDER" ] || fail "NOTES_FOLDER is not set in .env"
-[ -d "$NOTES_FOLDER" ] || fail "Notes folder does not exist: $NOTES_FOLDER"
-
-DB_PATH="$APP_DIR/data/remndrs.db"
-
-SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new"
-[ -n "$BACKUP_SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $(expand "$BACKUP_SSH_KEY")"
-SSH_CMD="ssh $SSH_OPTS"
-
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)" || fail 'python3 not found'
+BACKUP_DEST="$(config BACKUP_DEST)"
+[ -n "$BACKUP_DEST" ] || fail 'Set BACKUP_DEST=user@host:path'
+[[ "$BACKUP_DEST" == *:* ]] || fail 'BACKUP_DEST must be remote (user@host:path)'
 DEST_HOST="${BACKUP_DEST%%:*}"
 DEST_PATH="${BACKUP_DEST#*:}"
-
-bold "── Remndrs backup → $BACKUP_DEST ──"
-
-# ── 1 · Make sure the remote folders exist ───────────────
-$SSH_CMD "$DEST_HOST" "mkdir -p '$DEST_PATH/notes' '$DEST_PATH/db'" \
-  || fail "Can't reach $DEST_HOST over SSH — check the host, your key, and that Remote Login is on"
-ok "Reached $DEST_HOST"
-
-# ── 2 · Consistent DB snapshot, then ship it ─────────────
-STAMP="$(date +%Y%m%d-%H%M%S)"
-SNAP="$(mktemp -t "remndrs-XXXX").db"
-trap 'rm -f "$SNAP"' EXIT
-if [ -f "$DB_PATH" ]; then
-  "$PYTHON" - "$DB_PATH" "$SNAP" <<'PY'
-import sqlite3, sys
-src, dst = sys.argv[1], sys.argv[2]
-s = sqlite3.connect(src); d = sqlite3.connect(dst)
-with d:
-    s.backup(d)
-s.close(); d.close()
-PY
-  rsync -az -e "$SSH_CMD" "$SNAP" "$BACKUP_DEST/db/remndrs-$STAMP.db"
-  ok "DB snapshot → db/remndrs-$STAMP.db"
+# Deliberately narrow remote-shell grammar; reject rather than interpolate shell syntax.
+[[ "$DEST_HOST" =~ ^[A-Za-z0-9_][A-Za-z0-9_.@-]*$ ]] || fail 'Invalid backup SSH host'
+[[ "$DEST_PATH" =~ ^[A-Za-z0-9_./-]+$ && "$DEST_PATH" != -* && "$DEST_PATH" != / ]] || fail 'Backup remote path must be non-root, with no spaces or shell characters'
+BACKUP_KEEP_DB="$(config BACKUP_KEEP_DB)"
+BACKUP_KEEP_DB="${BACKUP_KEEP_DB:-14}"
+[[ "$BACKUP_KEEP_DB" =~ ^[1-9][0-9]{0,3}$ ]] || fail 'BACKUP_KEEP_DB must be an integer from 1 to 9999'
+DB_PATH="$(config BACKUP_DB_PATH)"
+NOTES_FOLDER="$(config BACKUP_NOTES_FOLDER)"
+if [ -n "$DB_PATH" ] || [ -n "$NOTES_FOLDER" ]; then
+  [ -n "$DB_PATH" ] && [ -n "$NOTES_FOLDER" ] || fail 'Set BOTH BACKUP_DB_PATH and BACKUP_NOTES_FOLDER for custom paths'
 else
-  note "No data/remndrs.db yet — skipping DB snapshot"
+  LAYOUT="$(config BACKUP_LAYOUT)"
+  LAYOUT="${LAYOUT:-auto}"
+  if [ "$LAYOUT" = auto ]; then
+    native=0; docker=0
+    [ ! -f data/remndrs.db ] || native=1
+    [ ! -f data/db/remndrs.db ] || docker=1
+    [ "$((native + docker))" -eq 1 ] || fail 'Cannot select one database; set BACKUP_LAYOUT=native or docker, or both explicit backup paths'
+    if [ "$docker" -eq 1 ]; then LAYOUT=docker; else LAYOUT=native; fi
+  fi
+  case "$LAYOUT" in
+    docker) DB_PATH="$APP_DIR/data/db/remndrs.db"; NOTES_FOLDER="$APP_DIR/data/notes" ;;
+    native) DB_PATH="$APP_DIR/data/remndrs.db"; NOTES_FOLDER="$(config NOTES_FOLDER)"
+            [ -n "$NOTES_FOLDER" ] || fail 'Native backup needs NOTES_FOLDER (or both explicit backup paths)' ;;
+    *) fail 'BACKUP_LAYOUT must be auto, native, or docker' ;;
+  esac
 fi
-
-# ── 3 · Mirror the notes folder (no --delete: never lose backed-up files) ──
+DB_PATH="$(expand "$DB_PATH")"
+NOTES_FOLDER="$(expand "$NOTES_FOLDER")"
+[ -f "$DB_PATH" ] || fail 'Configured database is missing; refusing an incomplete backup'
+[ -d "$NOTES_FOLDER" ] || fail 'Configured notes directory is missing; check runtime fallback or Docker host paths'
+SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+SSH_CMD='ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
+KEY="$(config BACKUP_SSH_KEY)"
+if [ -n "$KEY" ]; then
+  KEY="$(expand "$KEY")"
+  [[ "$KEY" != *"'"* && "$KEY" != *$'\n'* && "$KEY" != *$'\r'* ]] || fail 'SSH key path contains unsupported quote/newline'
+  [ -f "$KEY" ] || fail 'Configured SSH key file is missing'
+  SSH+=(-i "$KEY")
+  SSH_CMD+=" -i '$KEY'"
+fi
+# mktemp returns the actual snapshot filename; no leaked extension-less file.
+SNAP="$(mktemp "${TMPDIR:-/tmp}/remndrs-backup.XXXXXX")"
+"$PYTHON" - "$DB_PATH" "$SNAP" <<'PY'
+import pathlib, sqlite3, sys
+src, dst = sys.argv[1:]
+s = sqlite3.connect(pathlib.Path(src).resolve().as_uri() + '?mode=ro', uri=True)
+d = sqlite3.connect(dst)
+try:
+    s.backup(d)
+    if d.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
+        raise SystemExit('Backup database integrity check failed')
+finally:
+    d.close()
+    s.close()
+PY
+STAMP="$(date +%Y%m%d-%H%M%S)-$$"
+"${SSH[@]}" "$DEST_HOST" "mkdir -p '$DEST_PATH/notes' '$DEST_PATH/db'"
+# No --delete: deletions in the app must not erase previous note/attachment copies.
 rsync -az -e "$SSH_CMD" "$NOTES_FOLDER/" "$BACKUP_DEST/notes/"
-ok "Notes mirrored → notes/"
-
-# ── 4 · Rotate old DB snapshots ──────────────────────────
-$SSH_CMD "$DEST_HOST" \
-  "cd '$DEST_PATH/db' && ls -1t remndrs-*.db 2>/dev/null | tail -n +$((BACKUP_KEEP_DB + 1)) | xargs -r rm -f"
-ok "Kept newest $BACKUP_KEEP_DB DB snapshots"
-
-bold ""
-bold "Backup complete."
+rsync -az -e "$SSH_CMD" "$SNAP" "$BACKUP_DEST/db/remndrs-$STAMP.db"
+"${SSH[@]}" "$DEST_HOST" \
+  "cd '$DEST_PATH/db' && ls -1t remndrs-*.db | tail -n +$((BACKUP_KEEP_DB + 1)) | while IFS= read -r file; do rm -f -- \"\$file\" || exit 1; done"
+printf 'Backup complete: verified SQLite snapshot and notes tree transferred; retained %s DB snapshots.\n' "$BACKUP_KEEP_DB"
